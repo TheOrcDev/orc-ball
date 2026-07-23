@@ -529,29 +529,27 @@ export class GameScene extends Phaser.Scene {
 
     container.add([dim, panel, title, hint]);
 
-    const soundText = () =>
-      Sfx.isMuted ? 'Sound: OFF' : 'Sound: ON';
+    const soundText = () => (Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON');
 
     const items: { label: string; onClick: () => void; y: number }[] = [
       {
         label: 'Resume',
-        y: -60,
+        y: -80,
         onClick: () => this.resumeGame(),
       },
       {
         label: 'New Game',
-        y: -10,
+        y: -30,
         onClick: () => this.startNewGame(),
       },
       {
         label: soundText(),
-        y: 40,
+        y: 30,
         onClick: () => {
           Sfx.toggleMuted();
-          Music.applyMuteState(this);
           if (this.soundMenuLabel) {
             this.soundMenuLabel.setText(
-              Sfx.isMuted ? 'Sound: OFF' : 'Sound: ON',
+              Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON',
             );
           }
           if (!Sfx.isMuted) this.sfx.tryUnlock();
@@ -559,17 +557,33 @@ export class GameScene extends Phaser.Scene {
         },
       },
       {
+        label: Music.isEnabled ? 'Music: ON' : 'Music: OFF',
+        y: 72,
+        onClick: () => {
+          Music.toggleEnabled(this);
+          Music.syncPlaying(this);
+          // refresh label via rebuild is heavy; update by finding text
+          this.refreshPauseMusicLabel(container);
+          this.sfx.paddleHit();
+        },
+      },
+      {
         label: 'Main Menu',
-        y: 90,
+        y: 114,
         onClick: () => this.goToMainMenu(),
       },
     ];
+
+    // taller panel for extra row
+    panel.setSize(320, 340);
+    title.setY(-130);
+    hint.setY(148);
 
     for (const item of items) {
       const btn = this.makePauseButton(item.label, item.y, item.onClick);
       container.add(btn.bg);
       container.add(btn.text);
-      if (item.label.startsWith('Sound')) {
+      if (item.label.startsWith('SFX')) {
         this.soundMenuLabel = btn.text;
       }
     }
@@ -615,6 +629,20 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay?.destroy(true);
     this.pauseOverlay = undefined;
     this.soundMenuLabel = undefined;
+  }
+
+  private refreshPauseMusicLabel(
+    container: Phaser.GameObjects.Container,
+  ): void {
+    const want = Music.isEnabled ? 'Music: ON' : 'Music: OFF';
+    for (const child of container.list) {
+      if (child instanceof Phaser.GameObjects.Text) {
+        const t = child.text;
+        if (t.startsWith('Music:')) {
+          child.setText(want);
+        }
+      }
+    }
   }
 
   private startNewGame(): void {

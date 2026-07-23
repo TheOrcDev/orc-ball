@@ -75,6 +75,10 @@ export const COLORS = {
 
 export const HIGH_SCORE_KEY = 'orc-ball-highscore';
 export const SOUND_MUTED_KEY = 'orc-ball-sound-muted';
+export const MUSIC_ENABLED_KEY = 'orc-ball-music-enabled';
+/** 0–100 */
+export const MUSIC_VOLUME_KEY = 'orc-ball-music-volume';
+export const MUSIC_VOLUME_DEFAULT = 50;
 
 export const SCORE_PER_HIT = 10;
 export const SCORE_PER_BREAK = 50;

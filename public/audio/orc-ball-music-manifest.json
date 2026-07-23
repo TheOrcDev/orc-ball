@@ -1,0 +1,64 @@
+{
+  "tracks": [
+    {
+      "title": "Moonlit Cartridge",
+      "file": "orc-ball-menu-moonlit-cartridge.wav",
+      "role": "menu",
+      "key": "D minor",
+      "bpm": 96,
+      "bars": 8,
+      "loop": true,
+      "sample_rate": 44100,
+      "frames": 882000,
+      "duration_seconds": 20.0,
+      "peak_dbfs": -1.11,
+      "rms_dbfs": -13.32,
+      "seam_jump_dbfs": -25.97
+    },
+    {
+      "title": "Coin-Op Chase",
+      "file": "orc-ball-gameplay-coin-op-chase.wav",
+      "role": "gameplay",
+      "key": "A minor",
+      "bpm": 128,
+      "bars": 8,
+      "loop": true,
+      "sample_rate": 44100,
+      "frames": 661500,
+      "duration_seconds": 15.0,
+      "peak_dbfs": -1.11,
+      "rms_dbfs": -15.9,
+      "seam_jump_dbfs": -30.24
+    },
+    {
+      "title": "One Heart Left",
+      "file": "orc-ball-danger-one-heart-left.wav",
+      "role": "danger",
+      "key": "E Phrygian",
+      "bpm": 144,
+      "bars": 8,
+      "loop": true,
+      "sample_rate": 44100,
+      "frames": 588000,
+      "duration_seconds": 13.333333,
+      "peak_dbfs": -1.11,
+      "rms_dbfs": -15.26,
+      "seam_jump_dbfs": -21.07
+    },
+    {
+      "title": "Gem Secured",
+      "file": "orc-ball-level-clear-gem-secured.wav",
+      "role": "level-clear",
+      "key": "A major lift",
+      "bpm": 128,
+      "bars": 2,
+      "loop": false,
+      "sample_rate": 44100,
+      "frames": 165375,
+      "duration_seconds": 3.75,
+      "peak_dbfs": -1.11,
+      "rms_dbfs": -14.97,
+      "seam_jump_dbfs": -33.76
+    }
+  ]
+}
