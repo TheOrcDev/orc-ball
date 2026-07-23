@@ -10,21 +10,15 @@ export const MUSIC_MENU = 'music-menu';
 export const MUSIC_LEVEL_CLEAR = 'music-level-clear';
 export const MUSIC_DANGER = 'music-danger';
 export const MUSIC_COIN_OP = 'music-coin-op';
-export const MUSIC_BINARY_EAGLE = 'music-binary-eagle';
 
 /** Rotating in-game loops — a new one starts each level (by index). */
-export const GAMEPLAY_TRACKS = [
-  MUSIC_BINARY_EAGLE,
-  MUSIC_COIN_OP,
-  MUSIC_DANGER,
-] as const;
+export const GAMEPLAY_TRACKS = [MUSIC_COIN_OP, MUSIC_DANGER] as const;
 
 const ALL_KEYS = [
   MUSIC_MENU,
   MUSIC_LEVEL_CLEAR,
   MUSIC_DANGER,
   MUSIC_COIN_OP,
-  MUSIC_BINARY_EAGLE,
 ] as const;
 
 type SoundWithVol = Phaser.Sound.BaseSound & {

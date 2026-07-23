@@ -44,7 +44,6 @@ export class BootScene extends Phaser.Scene {
       'music-level-clear',
       'audio/orc-ball-level-clear-gem-secured.mp3',
     );
-    this.load.audio('music-binary-eagle', 'audio/binary-eagle.mp3');
   }
 
   create(): void {
