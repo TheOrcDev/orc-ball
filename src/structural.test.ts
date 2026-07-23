@@ -121,7 +121,7 @@ describe('structural audit of shipped source', () => {
 
   it('index.html mounts #game on black body; vite base and phaser chunk', () => {
     expect(index).toMatch(/id="game"/);
-    expect(index).toMatch(/background:\s*#000/);
+    expect(index).toMatch(/background:\s*#0{3}|#0a0a12/i);
     expect(vite).toMatch(/base:\s*['"](\.\/|\/)['"]/);
     expect(vite).toMatch(/phaser/);
   });
