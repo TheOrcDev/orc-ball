@@ -7,19 +7,66 @@ import {
 
 /** Phaser audio keys (loaded in BootScene from public/audio/). */
 export const MUSIC_MENU = 'music-menu';
+export const MUSIC_MENU_EMBERGLASS = 'music-menu-emberglass';
+export const MUSIC_MENU_LANTERNS = 'music-menu-lanterns';
+export const MUSIC_MENU_STARLIGHT = 'music-menu-starlight';
 export const MUSIC_LEVEL_CLEAR = 'music-level-clear';
 export const MUSIC_DANGER = 'music-danger';
 export const MUSIC_COIN_OP = 'music-coin-op';
+export const MUSIC_GOBLIN_GEARSHIFT = 'music-goblin-gearshift';
+export const MUSIC_MOLTEN_TOKEN_RUN = 'music-molten-token-run';
+export const MUSIC_CRYPT_CIRCUIT = 'music-crypt-circuit';
+export const MUSIC_RUNE_RAIL_RUSH = 'music-rune-rail-rush';
+export const MUSIC_GOBLIN_VOLTAGE = 'music-goblin-voltage';
+export const MUSIC_RUNE_RUNNER_RELAY = 'music-rune-runner-relay';
+export const MUSIC_SHADOW_COIL_SPRINT = 'music-shadow-coil-sprint';
+export const MUSIC_NEON_BOG_SPRINT = 'music-neon-bog-sprint';
+export const MUSIC_CLOCKWORK_CAVERNS = 'music-clockwork-caverns';
+export const MUSIC_CRYSTAL_CIRCUIT = 'music-crystal-circuit';
 
 /** Rotating in-game loops — a new one starts each level (by index). */
-export const GAMEPLAY_TRACKS = [MUSIC_COIN_OP, MUSIC_DANGER] as const;
-
-const ALL_KEYS = [
-  MUSIC_MENU,
-  MUSIC_LEVEL_CLEAR,
-  MUSIC_DANGER,
+export const GAMEPLAY_TRACKS = [
   MUSIC_COIN_OP,
+  MUSIC_GOBLIN_GEARSHIFT,
+  MUSIC_MOLTEN_TOKEN_RUN,
+  MUSIC_CRYPT_CIRCUIT,
+  MUSIC_RUNE_RAIL_RUSH,
+  MUSIC_GOBLIN_VOLTAGE,
+  MUSIC_RUNE_RUNNER_RELAY,
+  MUSIC_SHADOW_COIL_SPRINT,
+  MUSIC_NEON_BOG_SPRINT,
+  MUSIC_CLOCKWORK_CAVERNS,
+  MUSIC_CRYSTAL_CIRCUIT,
 ] as const;
+
+export const MENU_TRACKS = [
+  MUSIC_MENU,
+  MUSIC_MENU_EMBERGLASS,
+  MUSIC_MENU_LANTERNS,
+  MUSIC_MENU_STARLIGHT,
+] as const;
+
+export const MUSIC_TRACK_ASSETS = [
+  [MUSIC_MENU, 'audio/orc-ball-menu-moonlit-cartridge.mp3'],
+  [MUSIC_MENU_EMBERGLASS, 'audio/orc-ball-menu-02-emberglass-title.mp3'],
+  [MUSIC_MENU_LANTERNS, 'audio/orc-ball-menu-03-lanterns-at-spawn.mp3'],
+  [MUSIC_MENU_STARLIGHT, 'audio/orc-ball-menu-04-save-slot-starlight.mp3'],
+  [MUSIC_COIN_OP, 'audio/orc-ball-gameplay-coin-op-chase.mp3'],
+  [MUSIC_GOBLIN_GEARSHIFT, 'audio/orc-ball-gameplay-02-goblin-gearshift.mp3'],
+  [MUSIC_MOLTEN_TOKEN_RUN, 'audio/orc-ball-gameplay-03-molten-token-run.mp3'],
+  [MUSIC_CRYPT_CIRCUIT, 'audio/orc-ball-gameplay-04-crypt-circuit.mp3'],
+  [MUSIC_RUNE_RAIL_RUSH, 'audio/orc-ball-gameplay-05-rune-rail-rush.mp3'],
+  [MUSIC_GOBLIN_VOLTAGE, 'audio/orc-ball-gameplay-06-goblin-voltage.mp3'],
+  [MUSIC_RUNE_RUNNER_RELAY, 'audio/orc-ball-gameplay-07-rune-runner-relay.mp3'],
+  [MUSIC_SHADOW_COIL_SPRINT, 'audio/orc-ball-gameplay-08-shadow-coil-sprint.mp3'],
+  [MUSIC_NEON_BOG_SPRINT, 'audio/orc-ball-gameplay-09-neon-bog-sprint.mp3'],
+  [MUSIC_CLOCKWORK_CAVERNS, 'audio/orc-ball-gameplay-10-clockwork-caverns.mp3'],
+  [MUSIC_CRYSTAL_CIRCUIT, 'audio/orc-ball-gameplay-11-crystal-circuit.mp3'],
+  [MUSIC_DANGER, 'audio/orc-ball-danger-one-heart-left.mp3'],
+  [MUSIC_LEVEL_CLEAR, 'audio/orc-ball-level-clear-gem-secured.mp3'],
+] as const;
+
+const ALL_KEYS = MUSIC_TRACK_ASSETS.map(([key]) => key);
 
 type SoundWithVol = Phaser.Sound.BaseSound & {
   setVolume?: (v: number) => void;
@@ -36,6 +83,8 @@ export class Music {
   private static volPct = Music.loadVolumePercent();
   private static currentKey: string | null = null;
   private static currentLevelIndex: number | null = null;
+  private static currentMenuKey: string | null = null;
+  private static menuVisitIndex = 0;
 
   static get isEnabled(): boolean {
     return Music.enabled;
@@ -60,6 +109,14 @@ export class Music {
       ((levelIndex % GAMEPLAY_TRACKS.length) + GAMEPLAY_TRACKS.length) %
       GAMEPLAY_TRACKS.length;
     return GAMEPLAY_TRACKS[i]!;
+  }
+
+  /** Which title loop plays for a 0-based visit to the main menu. */
+  static trackKeyForMenuVisit(visitIndex: number): string {
+    const i =
+      ((visitIndex % MENU_TRACKS.length) + MENU_TRACKS.length) %
+      MENU_TRACKS.length;
+    return MENU_TRACKS[i]!;
   }
 
   static setEnabled(on: boolean, scene?: Phaser.Scene): void {
@@ -134,10 +191,12 @@ export class Music {
     key: string,
     loop: boolean,
   ): void {
+    // Clear any previous selection even while music is off. Otherwise advancing
+    // a level while disabled can resume the stale paused track when re-enabled.
+    Music.stopAll(scene);
     if (!Music.enabled || Music.volPct <= 0) return;
     if (!scene.cache.audio.exists(key)) return;
 
-    Music.stopAll(scene);
     scene.sound.play(key, {
       loop,
       volume: Music.volume,
@@ -147,8 +206,11 @@ export class Music {
 
   /** Title screen loop. */
   static playMenu(scene: Phaser.Scene): void {
+    const key = Music.trackKeyForMenuVisit(Music.menuVisitIndex);
+    Music.menuVisitIndex += 1;
     Music.currentLevelIndex = null;
-    Music.playKey(scene, MUSIC_MENU, true);
+    Music.currentMenuKey = key;
+    Music.playKey(scene, key, true);
   }
 
   /**
@@ -157,6 +219,7 @@ export class Music {
    */
   static playForLevel(scene: Phaser.Scene, levelIndex: number): void {
     const key = Music.trackKeyForLevel(levelIndex);
+    Music.currentMenuKey = null;
     Music.currentLevelIndex = levelIndex;
     // Always restart so "new level → new soundtrack start"
     Music.playKey(scene, key, true);
@@ -166,6 +229,7 @@ export class Music {
   static playLevelClear(scene: Phaser.Scene): void {
     if (!Music.enabled || Music.volPct <= 0) return;
     if (!scene.cache.audio.exists(MUSIC_LEVEL_CLEAR)) return;
+    Music.currentMenuKey = null;
     // Stop level loop first so sting is clear
     if (Music.currentKey && Music.currentKey !== MUSIC_LEVEL_CLEAR) {
       scene.sound.stopByKey(Music.currentKey);
@@ -179,6 +243,7 @@ export class Music {
 
   /** Low-lives tension loop (optional hook). */
   static playDanger(scene: Phaser.Scene): void {
+    Music.currentMenuKey = null;
     Music.playKey(scene, MUSIC_DANGER, true);
   }
 
@@ -217,6 +282,7 @@ export class Music {
   static stop(scene: Phaser.Scene): void {
     Music.stopAll(scene);
     Music.currentLevelIndex = null;
+    Music.currentMenuKey = null;
   }
 
   static syncPlaying(scene: Phaser.Scene): void {
@@ -237,6 +303,10 @@ export class Music {
     }
     if (Music.currentLevelIndex !== null) {
       Music.playForLevel(scene, Music.currentLevelIndex);
+      return;
+    }
+    if (Music.currentMenuKey) {
+      Music.playKey(scene, Music.currentMenuKey, true);
     }
   }
 

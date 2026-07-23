@@ -21,7 +21,7 @@ export class MenuScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
-    // Menu loop (Moonlit Cartridge)
+    // Rotate through the four title-screen loops on each menu visit.
     Music.playMenu(this);
 
     // Full-screen retro landing art

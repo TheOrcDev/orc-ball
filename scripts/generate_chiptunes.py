@@ -14,6 +14,7 @@ import re
 import struct
 import wave
 from array import array
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -53,6 +54,19 @@ def note_frequency(note: str) -> float:
     return 440.0 * (2.0 ** ((midi - 69) / 12.0))
 
 
+def note_to_midi(note: str) -> int:
+    match = NOTE_RE.match(note)
+    if not match:
+        raise ValueError(f"Invalid note: {note}")
+    letter, accidental, octave_text = match.groups()
+    return (int(octave_text) + 1) * 12 + PITCH_CLASSES[f"{letter}{accidental}"]
+
+
+def midi_to_note(midi: int) -> str:
+    names = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+    return f"{names[midi % 12]}{midi // 12 - 1}"
+
+
 def equal_power_pan(pan: float) -> tuple[float, float]:
     position = (max(-1.0, min(1.0, pan)) + 1.0) * math.pi / 4.0
     return math.cos(position), math.sin(position)
@@ -69,6 +83,7 @@ class Song:
         loopable: bool,
         key: str,
         role: str,
+        master_peak: float = MASTER_PEAK,
     ) -> None:
         self.title = title
         self.filename = filename
@@ -77,6 +92,7 @@ class Song:
         self.loopable = loopable
         self.key = key
         self.role = role
+        self.master_peak = master_peak
         self.seconds_per_beat = 60.0 / bpm
         self.duration_seconds = bars * 4.0 * self.seconds_per_beat
         self.frames = round(self.duration_seconds * SAMPLE_RATE)
@@ -360,7 +376,7 @@ class Song:
                 abs(math.tanh(left_sample * drive)),
                 abs(math.tanh(right_sample * drive)),
             )
-        gain = MASTER_PEAK / max(processed_peak, 1e-9)
+        gain = self.master_peak / max(processed_peak, 1e-9)
         quantization_steps = 4095.0
         first_left = 0.0
         first_right = 0.0
@@ -420,7 +436,7 @@ class Song:
             "sample_rate": SAMPLE_RATE,
             "frames": self.frames,
             "duration_seconds": round(self.frames / SAMPLE_RATE, 6),
-            "peak_dbfs": round(20.0 * math.log10(MASTER_PEAK), 2),
+            "peak_dbfs": round(20.0 * math.log10(self.master_peak), 2),
             "rms_dbfs": round(rms_dbfs, 2),
             "seam_jump_dbfs": round(seam_jump_dbfs, 2),
         }
@@ -971,6 +987,730 @@ def make_level_clear() -> Song:
     return song
 
 
+@dataclass(frozen=True)
+class LoopSpec:
+    title: str
+    filename: str
+    bpm: float
+    key: str
+    role: str
+    progression: tuple[tuple[str, str], ...]
+    lead_bars: tuple[tuple[str, ...], ...]
+    arp_order: tuple[int, ...]
+    bass_order: tuple[int | None, ...]
+    drum_style: str
+    lead_duty: float = 0.25
+    arp_duty: float = 0.125
+    echo_beats: float = 0.75
+    echo_level: float = 0.11
+    lead_gate: float = 0.62
+    energy: float = 1.0
+
+
+CHORD_INTERVALS: dict[str, tuple[int, int, int, int]] = {
+    "minor": (0, 3, 7, 12),
+    "major": (0, 4, 7, 12),
+    "minor7": (0, 3, 7, 10),
+    "major7": (0, 4, 7, 11),
+    "dominant7": (0, 4, 7, 10),
+    "diminished": (0, 3, 6, 9),
+    "sus2": (0, 2, 7, 12),
+    "sus4": (0, 5, 7, 12),
+    "minor6": (0, 3, 7, 9),
+    "major6": (0, 4, 7, 9),
+}
+
+CHORD_FIFTHS = {
+    "diminished": 6,
+}
+
+ARP_RISE_FALL = (0, 1, 2, 1, 0, 2, 3, 2, 0, 1, 2, 3, 2, 1, 3, 1)
+ARP_OCTAVE_PULSE = (0, 2, 1, 2, 3, 2, 1, 2, 0, 1, 2, 1, 3, 2, 1, 2)
+ARP_ZIGZAG = (0, 3, 1, 2, 0, 2, 1, 3, 0, 1, 3, 2, 1, 2, 3, 1)
+ARP_CLIMB = (0, 1, 2, 3, 1, 2, 3, 2, 0, 1, 2, 3, 2, 1, 0, 2)
+ARP_MENU_A = (0, 2, 1, 3, 2, 1, 0, 2)
+ARP_MENU_B = (0, 1, 3, 2, 1, 2, 3, 1)
+
+BASS_DRIVE = (0, 0, 2, None, 0, 1, 2, None)
+BASS_BOUNCE = (0, None, 2, 1, 0, 2, 1, None)
+BASS_RUN = (0, 2, 1, 2, 0, 1, 2, 1)
+BASS_SYNC = (0, None, 1, 2, None, 0, 1, 2)
+BASS_MENU = (0, 1, 2, 1)
+BASS_MENU_WALK = (0, 1, 2, 2)
+
+
+def chord_voices(
+    bass_root: str,
+    quality: str,
+) -> tuple[tuple[str, str, str], tuple[str, str, str, str]]:
+    root_midi = note_to_midi(bass_root)
+    intervals = CHORD_INTERVALS[quality]
+    bass_fifth = CHORD_FIFTHS.get(quality, 7)
+    bass = (
+        midi_to_note(root_midi),
+        midi_to_note(root_midi + bass_fifth),
+        midi_to_note(root_midi + 12),
+    )
+    arp = tuple(midi_to_note(root_midi + 12 + interval) for interval in intervals)
+    return bass, arp  # type: ignore[return-value]
+
+
+def add_catalog_drums(
+    song: Song,
+    bar_beat: float,
+    bar_index: int,
+    *,
+    role: str,
+    style: str,
+    energy: float,
+) -> None:
+    if role == "menu":
+        song.add_kick(
+            bar_beat,
+            volume=0.105 * energy,
+            duration=0.10,
+        )
+        if bar_index >= 4:
+            song.add_kick(
+                bar_beat + 2.0,
+                volume=0.076 * energy,
+                duration=0.09,
+            )
+        if bar_index % 2 == 1:
+            song.add_snare(
+                bar_beat + 3.0,
+                volume=0.030 * energy,
+                duration=0.05,
+                pan=0.08,
+                rim=True,
+            )
+        hat_offsets = (
+            (1.5, 3.5)
+            if bar_index < 4
+            else (0.5, 1.5, 2.5, 3.5)
+        )
+        for hat_index, offset in enumerate(hat_offsets):
+            song.add_hat(
+                bar_beat + offset,
+                volume=(0.016 if bar_index < 4 else 0.019) * energy,
+                duration=0.03,
+                pan=-0.25 if hat_index % 2 == 0 else 0.25,
+            )
+        return
+
+    patterns = {
+        "drive": ((1, 5, 9, 13), (5, 13), (1, 3, 5, 7, 9, 11, 13, 15)),
+        "break": ((1, 4, 7, 9, 12, 15), (5, 13), (1, 3, 5, 7, 9, 11, 13, 15)),
+        "industrial": ((1, 3, 7, 9, 11, 15), (5, 13), tuple(range(1, 17))),
+        "rail": ((1, 7, 9, 12), (5, 13), (3, 6, 7, 11, 14, 15)),
+        "voltage": ((1, 5, 9, 13, 15), (5, 13), (1, 3, 7, 9, 11, 15)),
+        "relay": ((1, 5, 9, 11, 13), (5, 13), (2, 4, 6, 8, 10, 12, 14, 16)),
+        "crypt": ((1, 5, 9, 12, 13), (5, 13), tuple(range(2, 17, 2))),
+        "bog": ((1, 5, 9, 13), (5, 13), (1, 3, 5, 7, 9, 11, 13, 15)),
+        "gear": ((1, 7, 9, 12, 15), (5, 13), (3, 5, 7, 11, 13, 15)),
+        "crystal": ((1, 5, 9, 13), (5, 13), tuple(range(2, 17, 2))),
+    }
+    kick_steps, snare_steps, hat_steps = patterns[style]
+    for step in kick_steps:
+        song.add_kick(
+            bar_beat + (step - 1) * 0.25,
+            volume=0.18 * energy,
+            duration=0.108,
+        )
+    for step in snare_steps:
+        song.add_snare(
+            bar_beat + (step - 1) * 0.25,
+            volume=0.064 * energy,
+            pan=0.06,
+        )
+    for hat_index, step in enumerate(hat_steps):
+        accented = step in (3, 7, 11, 15)
+        open_hat = step in (15, 16) and bar_index in (1, 3, 5)
+        song.add_hat(
+            bar_beat + (step - 1) * 0.25,
+            volume=(0.027 if accented else 0.015) * energy,
+            duration=0.029,
+            pan=-0.28 if hat_index % 2 == 0 else 0.28,
+            open_hat=open_hat,
+        )
+    if bar_index == 7:
+        song.add_noise_roll(bar_beat + 3.0, (0, 1, 2, 3), volume=0.045 * energy)
+
+
+def make_catalog_loop(spec: LoopSpec) -> Song:
+    if len(spec.progression) != 8:
+        raise ValueError(f"{spec.title}: progression must contain 8 bars")
+    if len(spec.lead_bars) not in (4, 8):
+        raise ValueError(f"{spec.title}: lead must contain 4 or 8 bars")
+    if any(len(bar) != 8 for bar in spec.lead_bars):
+        raise ValueError(f"{spec.title}: every lead bar must contain 8 slots")
+
+    is_menu = spec.role == "menu"
+    song = Song(
+        spec.title,
+        spec.filename,
+        spec.bpm,
+        8,
+        loopable=True,
+        key=spec.key,
+        role=spec.role,
+        master_peak=0.70 if is_menu else MASTER_PEAK,
+    )
+    arp_rate = 0.5 if is_menu else 0.25
+    bass_rate = 1.0 if is_menu else 0.5
+    expected_arp_slots = round(4.0 / arp_rate)
+    expected_bass_slots = round(4.0 / bass_rate)
+    if len(spec.arp_order) != expected_arp_slots:
+        raise ValueError(f"{spec.title}: wrong arp order length")
+    if len(spec.bass_order) != expected_bass_slots:
+        raise ValueError(f"{spec.title}: wrong bass order length")
+
+    for bar_index, (root, quality) in enumerate(spec.progression):
+        bar_beat = bar_index * 4.0
+        bass_voices, arp_voices = chord_voices(root, quality)
+        lead_pattern = spec.lead_bars[bar_index % len(spec.lead_bars)]
+        add_slot_pattern(
+            song,
+            bar_beat,
+            lead_pattern,
+            slot_beats=0.5,
+            volume=(0.090 if is_menu else 0.096) * spec.energy,
+            wave_shape="pulse",
+            duty=spec.lead_duty,
+            pan=-0.20,
+            gate=0.80 if is_menu else spec.lead_gate,
+            attack=0.004 if is_menu else 0.0015,
+            decay=0.045 if is_menu else 0.022,
+            sustain=0.68 if is_menu else 0.69,
+            release=0.080 if is_menu else 0.024,
+            lowpass_hz=6_000 if is_menu else 7_000,
+            echo_beats=spec.echo_beats,
+            echo_level=spec.echo_level,
+            vibrato_hz=4.4 if is_menu else 0.0,
+            vibrato_cents=4.5 if is_menu else 0.0,
+        )
+        arp_pattern = tuple(arp_voices[index] for index in spec.arp_order)
+        add_slot_pattern(
+            song,
+            bar_beat,
+            arp_pattern,
+            slot_beats=arp_rate,
+            volume=(0.040 if is_menu else 0.036) * spec.energy,
+            wave_shape="pulse",
+            duty=spec.arp_duty,
+            pan=0.26,
+            gate=0.48 if is_menu else 0.41,
+            attack=0.003 if is_menu else 0.001,
+            decay=0.026 if is_menu else 0.011,
+            sustain=0.54,
+            release=0.030 if is_menu else 0.012,
+            lowpass_hz=5_000 if is_menu else 6_100,
+        )
+        bass_pattern = tuple(
+            None if index is None else bass_voices[index]
+            for index in spec.bass_order
+        )
+        add_slot_pattern(
+            song,
+            bar_beat,
+            bass_pattern,
+            slot_beats=bass_rate,
+            volume=(0.105 if is_menu else 0.130) * spec.energy,
+            wave_shape="pulse",
+            duty=0.5,
+            pan=0.0,
+            gate=0.57 if is_menu else 0.42,
+            attack=0.005 if is_menu else 0.002,
+            decay=0.055 if is_menu else 0.030,
+            sustain=0.61 if is_menu else 0.67,
+            release=0.050 if is_menu else 0.017,
+            lowpass_hz=1_950 if is_menu else 2_450,
+        )
+        if is_menu:
+            # A quiet triangle undercurrent softens the pulse bass on title loops.
+            song.add_note(
+                bar_beat,
+                3.8,
+                bass_voices[0],
+                volume=0.022 * spec.energy,
+                wave_shape="triangle",
+                pan=0.0,
+                gate=0.94,
+                attack=0.018,
+                decay=0.12,
+                sustain=0.55,
+                release=0.10,
+                lowpass_hz=1_400,
+            )
+        add_catalog_drums(
+            song,
+            bar_beat,
+            bar_index,
+            role=spec.role,
+            style=spec.drum_style,
+            energy=spec.energy,
+        )
+    return song
+
+
+ADDITIONAL_LOOP_SPECS = (
+    LoopSpec(
+        title="Goblin Gearshift",
+        filename="orc-ball-gameplay-02-goblin-gearshift.wav",
+        bpm=126,
+        key="C Dorian",
+        role="gameplay",
+        progression=(
+            ("C2", "minor"),
+            ("F2", "major"),
+            ("A#1", "major"),
+            ("G1", "minor"),
+            ("D#2", "major"),
+            ("F2", "major"),
+            ("G1", "minor"),
+            ("A#1", "major"),
+        ),
+        lead_bars=(
+            ("r", "G5", "C6", "A#5", "G5", "D#5", "F5", "G5"),
+            ("A5", "C6", "A5", "F5", "G5", "A5", "C6", "r"),
+            ("F5", "D5", "A#4", "D5", "F5", "G5", "F5", "D5"),
+            ("G5", "A#5", "D6", "A#5", "A5", "G5", "D5", "r"),
+            ("r", "G5", "A#5", "G5", "D#5", "F5", "D5", "D#5"),
+            ("C6", "A5", "F5", "A5", "G5", "F5", "D#5", "C5"),
+            ("D5", "G5", "A#5", "A5", "G5", "F5", "D5", "G5"),
+            ("A#5", "F5", "D5", "F5", "G5", "D5", "A#4", "r"),
+        ),
+        arp_order=ARP_RISE_FALL,
+        bass_order=BASS_BOUNCE,
+        drum_style="drive",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.75,
+        echo_level=0.12,
+    ),
+    LoopSpec(
+        title="Molten Token Run",
+        filename="orc-ball-gameplay-03-molten-token-run.wav",
+        bpm=132,
+        key="F# Aeolian",
+        role="gameplay",
+        progression=(
+            ("F#2", "minor"),
+            ("D2", "major"),
+            ("A1", "major"),
+            ("E2", "major"),
+            ("F#2", "minor"),
+            ("B1", "minor"),
+            ("D2", "major"),
+            ("C#2", "minor"),
+        ),
+        lead_bars=(
+            ("C#6", "r", "A5", "F#5", "E5", "F#5", "A5", "C#6"),
+            ("D6", "A5", "F#5", "E5", "F#5", "A5", "E5", "r"),
+            ("E5", "A5", "C#6", "B5", "A5", "E5", "F#5", "A5"),
+            ("G#5", "B5", "E6", "B5", "G#5", "F#5", "E5", "r"),
+            ("r", "F#5", "A5", "C#6", "E6", "C#6", "A5", "F#5"),
+            ("B5", "D6", "F#6", "D6", "C#6", "B5", "A5", "F#5"),
+            ("A5", "D6", "F#6", "E6", "D6", "A5", "B5", "D6"),
+            ("G#5", "C#6", "E6", "C#6", "B5", "G#5", "E5", "C#5"),
+        ),
+        arp_order=ARP_OCTAVE_PULSE,
+        bass_order=BASS_RUN,
+        drum_style="break",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=0.5,
+        echo_level=0.10,
+        lead_gate=0.54,
+    ),
+    LoopSpec(
+        title="Crypt Circuit",
+        filename="orc-ball-gameplay-04-crypt-circuit.wav",
+        bpm=138,
+        key="D Phrygian",
+        role="gameplay",
+        progression=(
+            ("D2", "minor"),
+            ("D#2", "major"),
+            ("C2", "minor"),
+            ("D2", "minor"),
+            ("A#1", "major"),
+            ("G1", "minor"),
+            ("C2", "minor"),
+            ("D#2", "major"),
+        ),
+        lead_bars=(
+            ("A5", "F5", "D5", "D#5", "F5", "A5", "G5", "D#5"),
+            ("A#5", "G5", "D#5", "F5", "G5", "A#5", "A5", "G5"),
+            ("G5", "D#5", "C5", "D#5", "G5", "F5", "D#5", "C5"),
+            ("A5", "F5", "D5", "C5", "D5", "F5", "D#5", "D5"),
+            ("F5", "D5", "A#4", "D5", "F5", "G5", "F5", "D5"),
+            ("G5", "A#5", "D6", "C6", "A#5", "G5", "F5", "G5"),
+            ("D#5", "G5", "A#5", "A5", "G5", "F5", "D#5", "G5"),
+            ("A#5", "G5", "D#5", "F5", "G5", "D5", "D#5", "r"),
+        ),
+        arp_order=ARP_ZIGZAG,
+        bass_order=BASS_RUN,
+        drum_style="industrial",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=0.5,
+        echo_level=0.08,
+        lead_gate=0.52,
+        energy=0.94,
+    ),
+    LoopSpec(
+        title="Rune Rail Rush",
+        filename="orc-ball-gameplay-05-rune-rail-rush.wav",
+        bpm=122,
+        key="E Dorian",
+        role="gameplay",
+        progression=(
+            ("E2", "minor"),
+            ("A1", "major"),
+            ("E2", "minor"),
+            ("D2", "major"),
+            ("G1", "major"),
+            ("A1", "major"),
+            ("B1", "minor"),
+            ("D2", "major"),
+        ),
+        lead_bars=(
+            ("B4", "E5", "G5", "B5", "A5", "G5", "F#5", "E5"),
+            ("C#5", "E5", "A5", "G5", "E5", "C#5", "B4", "r"),
+            ("r", "G5", "B5", "E6", "D6", "B5", "A5", "G5"),
+            ("F#5", "A5", "D6", "A5", "F#5", "E5", "D5", "r"),
+            ("B4", "D5", "G5", "A5", "B5", "G5", "D5", "F#5"),
+            ("C#6", "B5", "A5", "E5", "G5", "F#5", "E5", "C#5"),
+            ("F#5", "B5", "D6", "C#6", "B5", "A5", "F#5", "D5"),
+            ("A5", "F#5", "D5", "F#5", "A5", "B5", "D6", "r"),
+        ),
+        arp_order=ARP_CLIMB,
+        bass_order=BASS_SYNC,
+        drum_style="rail",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.5,
+        echo_level=0.14,
+        lead_gate=0.66,
+    ),
+    LoopSpec(
+        title="Goblin Voltage",
+        filename="orc-ball-gameplay-06-goblin-voltage.wav",
+        bpm=130,
+        key="C minor",
+        role="gameplay",
+        progression=(
+            ("C2", "minor"),
+            ("G#1", "major"),
+            ("D#2", "major"),
+            ("A#1", "major"),
+            ("C2", "minor"),
+            ("F2", "minor"),
+            ("G1", "dominant7"),
+            ("G1", "dominant7"),
+        ),
+        lead_bars=(
+            ("G5", "r", "C6", "A#5", "G5", "D#5", "F5", "G5"),
+            ("D#5", "G5", "G#5", "r", "C6", "G#5", "G5", "D#5"),
+            ("G5", "A#5", "G5", "D#5", "F5", "G5", "A#5", "r"),
+            ("F5", "D5", "F5", "A#5", "G#5", "F5", "D5", "r"),
+            ("G5", "r", "C6", "D6", "D#6", "C6", "A#5", "G5"),
+            ("G#5", "F5", "C5", "D#5", "F5", "G#5", "G5", "F5"),
+            ("B5", "G5", "D5", "F5", "G5", "B5", "A5", "F5"),
+            ("D6", "B5", "G5", "F5", "D5", "B4", "G4", "r"),
+        ),
+        arp_order=ARP_RISE_FALL,
+        bass_order=BASS_DRIVE,
+        drum_style="voltage",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.75,
+        echo_level=0.11,
+    ),
+    LoopSpec(
+        title="Rune Runner Relay",
+        filename="orc-ball-gameplay-07-rune-runner-relay.wav",
+        bpm=126,
+        key="D Dorian",
+        role="gameplay",
+        progression=(
+            ("D2", "minor"),
+            ("G1", "major"),
+            ("C2", "major"),
+            ("A1", "minor"),
+            ("D2", "minor"),
+            ("G1", "major"),
+            ("A#1", "major"),
+            ("A1", "dominant7"),
+        ),
+        lead_bars=(
+            ("A5", "r", "D6", "A5", "F5", "E5", "F5", "A5"),
+            ("B5", "G5", "D5", "G5", "A5", "B5", "D6", "r"),
+            ("G5", "E5", "C5", "r", "E5", "G5", "A5", "G5"),
+            ("E5", "C5", "A4", "C5", "E5", "G5", "E5", "r"),
+            ("F5", "A5", "D6", "C6", "A5", "F5", "E5", "D5"),
+            ("G5", "B5", "D6", "B5", "A5", "G5", "D5", "E5"),
+            ("F5", "D5", "A#4", "D5", "F5", "A5", "G5", "F5"),
+            ("C#6", "A5", "E5", "G5", "A5", "C#6", "B5", "r"),
+        ),
+        arp_order=ARP_OCTAVE_PULSE,
+        bass_order=BASS_BOUNCE,
+        drum_style="relay",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=1.0,
+        echo_level=0.12,
+        lead_gate=0.59,
+    ),
+    LoopSpec(
+        title="Shadow Coil Sprint",
+        filename="orc-ball-gameplay-08-shadow-coil-sprint.wav",
+        bpm=132,
+        key="F# minor",
+        role="gameplay",
+        progression=(
+            ("F#2", "minor"),
+            ("D2", "major"),
+            ("A1", "major"),
+            ("E2", "major"),
+            ("F#2", "minor"),
+            ("B1", "minor"),
+            ("C#2", "dominant7"),
+            ("C#2", "dominant7"),
+        ),
+        lead_bars=(
+            ("C#5", "F#5", "A5", "r", "C#6", "A5", "G#5", "F#5"),
+            ("A5", "F#5", "D5", "F#5", "A5", "B5", "A5", "F#5"),
+            ("E5", "A5", "C#6", "B5", "A5", "E5", "F#5", "E5"),
+            ("G#5", "E5", "B4", "E5", "G#5", "B5", "A5", "G#5"),
+            ("F#5", "A5", "C#6", "E6", "C#6", "A5", "F#5", "E5"),
+            ("D5", "F#5", "B5", "A5", "F#5", "D5", "C#5", "D5"),
+            ("F5", "G#5", "C#6", "B5", "G#5", "F5", "D5", "F5"),
+            ("G#5", "C#6", "E6", "C#6", "B5", "G#5", "F5", "r"),
+        ),
+        arp_order=ARP_ZIGZAG,
+        bass_order=BASS_BOUNCE,
+        drum_style="crypt",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.5,
+        echo_level=0.10,
+        lead_gate=0.58,
+    ),
+    LoopSpec(
+        title="Neon Bog Sprint",
+        filename="orc-ball-gameplay-09-neon-bog-sprint.wav",
+        bpm=130,
+        key="C# minor",
+        role="gameplay",
+        progression=(
+            ("C#2", "minor"),
+            ("A1", "major"),
+            ("E2", "major"),
+            ("B1", "major"),
+            ("C#2", "minor"),
+            ("F#1", "minor"),
+            ("A1", "major"),
+            ("G#1", "dominant7"),
+        ),
+        lead_bars=(
+            ("r", "G#5", "E5", "G#5", "C#6", "~", "B5", "G#5"),
+            ("E5", "r", "C#5", "E5", "A5", "G#5", "E5", "C#5"),
+            ("B4", "E5", "G#5", "B5", "G#5", "F#5", "E5", "B4"),
+            ("F#5", "D#5", "B4", "D#5", "F#5", "G#5", "F#5", "D#5"),
+            ("G#5", "B5", "C#6", "E6", "C#6", "B5", "G#5", "E5"),
+            ("A5", "F#5", "C#5", "F#5", "A5", "G#5", "F#5", "E5"),
+            ("E5", "A5", "C#6", "B5", "A5", "E5", "C#5", "E5"),
+            ("D#5", "F#5", "G#5", "C6", "G#5", "F#5", "D#5", "r"),
+        ),
+        arp_order=ARP_CLIMB,
+        bass_order=BASS_DRIVE,
+        drum_style="bog",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.75,
+        echo_level=0.12,
+        lead_gate=0.64,
+    ),
+    LoopSpec(
+        title="Clockwork Caverns",
+        filename="orc-ball-gameplay-10-clockwork-caverns.wav",
+        bpm=126,
+        key="D Dorian",
+        role="gameplay",
+        progression=(
+            ("D2", "minor"),
+            ("G1", "major"),
+            ("C2", "major"),
+            ("D2", "minor"),
+            ("E2", "minor"),
+            ("G1", "major"),
+            ("A1", "minor"),
+            ("C2", "major"),
+        ),
+        lead_bars=(
+            ("D5", "r", "A4", "D5", "F5", "E5", "D5", "A4"),
+            ("B4", "D5", "G5", "A5", "G5", "D5", "B4", "D5"),
+            ("E5", "G5", "C6", "G5", "E5", "D5", "C5", "G4"),
+            ("A4", "D5", "F5", "A5", "G5", "F5", "E5", "D5"),
+            ("B4", "E5", "G5", "B5", "A5", "G5", "E5", "B4"),
+            ("D5", "G5", "B5", "A5", "G5", "E5", "D5", "B4"),
+            ("C5", "E5", "A5", "C6", "B5", "A5", "G5", "E5"),
+            ("G5", "E5", "D5", "C5", "A4", "C5", "E5", "r"),
+        ),
+        arp_order=ARP_RISE_FALL,
+        bass_order=BASS_RUN,
+        drum_style="gear",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=0.5,
+        echo_level=0.105,
+        lead_gate=0.61,
+    ),
+    LoopSpec(
+        title="Crystal Circuit",
+        filename="orc-ball-gameplay-11-crystal-circuit.wav",
+        bpm=132,
+        key="B minor",
+        role="gameplay",
+        progression=(
+            ("B1", "minor"),
+            ("G1", "major"),
+            ("D2", "major"),
+            ("A1", "major"),
+            ("B1", "minor"),
+            ("E2", "minor"),
+            ("G1", "major"),
+            ("F#1", "dominant7"),
+        ),
+        lead_bars=(
+            ("F#5", "B5", "D6", "B5", "A5", "F#5", "D5", "F#5"),
+            ("G5", "r", "B5", "D6", "B5", "A5", "G5", "D5"),
+            ("A4", "D5", "F#5", "A5", "F#5", "E5", "D5", "A4"),
+            ("E5", "C#5", "A4", "C#5", "E5", "F#5", "E5", "C#5"),
+            ("B4", "D5", "F#5", "A5", "B5", "D6", "C#6", "A5"),
+            ("G5", "E5", "B4", "E5", "G5", "F#5", "E5", "D5"),
+            ("D5", "G5", "B5", "D6", "B5", "A5", "F#5", "D5"),
+            ("C#5", "F#5", "A#5", "C#6", "A#5", "F#5", "E5", "C#5"),
+        ),
+        arp_order=ARP_ZIGZAG,
+        bass_order=BASS_DRIVE,
+        drum_style="crystal",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=0.75,
+        echo_level=0.11,
+        lead_gate=0.58,
+    ),
+    LoopSpec(
+        title="Emberglass Title",
+        filename="orc-ball-menu-02-emberglass-title.wav",
+        bpm=92,
+        key="G minor",
+        role="menu",
+        progression=(
+            ("G1", "minor"),
+            ("D#2", "major"),
+            ("A#1", "major"),
+            ("F2", "major"),
+            ("C2", "minor"),
+            ("G1", "minor"),
+            ("D#2", "major"),
+            ("D2", "dominant7"),
+        ),
+        lead_bars=(
+            ("r", "D5", "G5", "~", "A5", "A#5", "A5", "~"),
+            ("G5", "~", "D#5", "F5", "G5", "~", "D5", "~"),
+            ("F5", "D5", "A#4", "~", "D5", "F5", "G5", "~"),
+            ("A5", "~", "G5", "F5", "C5", "~", "F5", "~"),
+            ("r", "G5", "C6", "~", "A#5", "G5", "D#5", "~"),
+            ("D5", "~", "G5", "A5", "A#5", "~", "G5", "~"),
+            ("G5", "F5", "D#5", "~", "A#4", "D5", "G5", "~"),
+            ("F#5", "~", "D5", "C5", "A4", "~", "r", "r"),
+        ),
+        arp_order=ARP_MENU_A,
+        bass_order=BASS_MENU,
+        drum_style="menu",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=0.75,
+        echo_level=0.17,
+        energy=0.96,
+    ),
+    LoopSpec(
+        title="Lanterns at Spawn",
+        filename="orc-ball-menu-03-lanterns-at-spawn.wav",
+        bpm=88,
+        key="G Dorian",
+        role="menu",
+        progression=(
+            ("G1", "minor"),
+            ("C2", "major"),
+            ("A#1", "major"),
+            ("F2", "major"),
+            ("G1", "minor"),
+            ("C2", "major"),
+            ("A1", "minor"),
+            ("D2", "dominant7"),
+        ),
+        lead_bars=(
+            ("r", "D5", "G5", "~", "A5", "G5", "D5", "r"),
+            ("E5", "~", "G5", "E5", "D5", "C5", "r", "C5"),
+            ("D5", "F5", "A#5", "~", "A5", "F5", "D5", "r"),
+            ("C5", "~", "F5", "A5", "G5", "F5", "C5", "r"),
+            ("r", "A#4", "D5", "G5", "A5", "~", "G5", "D5"),
+            ("E5", "G5", "C6", "~", "A#5", "G5", "E5", "r"),
+            ("C5", "E5", "A5", "G5", "E5", "D5", "C5", "r"),
+            ("F#5", "A5", "D6", "~", "A5", "F#5", "D5", "r"),
+        ),
+        arp_order=ARP_MENU_B,
+        bass_order=BASS_MENU_WALK,
+        drum_style="menu",
+        lead_duty=0.125,
+        arp_duty=0.25,
+        echo_beats=1.0,
+        echo_level=0.15,
+        energy=0.92,
+    ),
+    LoopSpec(
+        title="Save-Slot Starlight",
+        filename="orc-ball-menu-04-save-slot-starlight.wav",
+        bpm=92,
+        key="E minor",
+        role="menu",
+        progression=(
+            ("E2", "minor"),
+            ("C2", "major7"),
+            ("G1", "sus2"),
+            ("D2", "sus2"),
+            ("A1", "minor7"),
+            ("C2", "major7"),
+            ("B1", "dominant7"),
+            ("B1", "dominant7"),
+        ),
+        lead_bars=(
+            ("r", "B4", "E5", "G5", "B5", "~", "A5", "G5"),
+            ("E5", "G5", "C6", "~", "B5", "G5", "E5", "r"),
+            ("D5", "G5", "B5", "~", "A5", "G5", "D5", "r"),
+            ("F#5", "A5", "D6", "C6", "A5", "F#5", "E5", "r"),
+            ("C5", "E5", "A5", "~", "G5", "E5", "C5", "r"),
+            ("E5", "G5", "C6", "B5", "G5", "E5", "D5", "r"),
+            ("D#5", "F#5", "B5", "A5", "F#5", "D#5", "B4", "r"),
+            ("r", "B4", "D#5", "F#5", "A5", "~", "r", "r"),
+        ),
+        arp_order=ARP_MENU_A,
+        bass_order=BASS_MENU,
+        drum_style="menu",
+        lead_duty=0.25,
+        arp_duty=0.125,
+        echo_beats=0.75,
+        echo_level=0.14,
+        energy=0.94,
+    ),
+)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -986,6 +1726,11 @@ def main() -> None:
     makers = (make_menu, make_gameplay, make_danger, make_level_clear)
     for make_song in makers:
         song = make_song()
+        output_path = output_dir / song.filename
+        print(f"Rendering {song.title} -> {output_path}")
+        manifests.append(song.write_wav(output_path))
+    for spec in ADDITIONAL_LOOP_SPECS:
+        song = make_catalog_loop(spec)
         output_path = output_dir / song.filename
         print(f"Rendering {song.title} -> {output_path}")
         manifests.append(song.write_wav(output_path))

@@ -11,6 +11,7 @@ import {
 } from '../config';
 import { ALL_POWER_UP_TYPES, type PowerUpType } from '../data/types';
 import { POWERUP_COLOR, POWERUP_LETTER } from '../objects/PowerUp';
+import { MUSIC_TRACK_ASSETS } from '../systems/Music';
 
 const POWERUP_TEX: Record<PowerUpType, string> = {
   EXPAND: 'powerup-expand',
@@ -31,19 +32,9 @@ export class BootScene extends Phaser.Scene {
     // Title / landing art from public/
     this.load.image('menu-bg', 'orc-ball-landing.jpg');
     // Soundtracks (prefer mp3 for size; see public/audio/)
-    this.load.audio('music-menu', 'audio/orc-ball-menu-moonlit-cartridge.mp3');
-    this.load.audio(
-      'music-coin-op',
-      'audio/orc-ball-gameplay-coin-op-chase.mp3',
-    );
-    this.load.audio(
-      'music-danger',
-      'audio/orc-ball-danger-one-heart-left.mp3',
-    );
-    this.load.audio(
-      'music-level-clear',
-      'audio/orc-ball-level-clear-gem-secured.mp3',
-    );
+    for (const [key, path] of MUSIC_TRACK_ASSETS) {
+      this.load.audio(key, path);
+    }
   }
 
   create(): void {
