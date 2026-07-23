@@ -1,7 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  base: './',
+  // Absolute base so assets resolve correctly on Vercel (and local preview)
+  base: '/',
   build: {
     rollupOptions: {
       output: {
