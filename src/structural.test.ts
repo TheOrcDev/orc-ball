@@ -66,12 +66,11 @@ describe('structural audit of shipped source', () => {
     expect(game).toMatch(/physics\.add\.overlap\(\s*this\.powerUps,\s*this\.paddle/);
   });
 
-  it('has LevelDef-driven levels (4–6)', () => {
+  it('has LevelDef-driven levels (20+)', () => {
     expect(types).toMatch(/interface LevelDef/);
     expect(levels).toMatch(/export const LEVELS/);
     const names = levels.match(/name:\s*'/g);
-    expect(names?.length).toBeGreaterThanOrEqual(4);
-    expect(names?.length).toBeLessThanOrEqual(6);
+    expect(names?.length).toBeGreaterThanOrEqual(20);
   });
 
   it('has all six power-up types and PowerUpManager reset/timed rules', () => {

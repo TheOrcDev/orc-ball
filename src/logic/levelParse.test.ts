@@ -38,9 +38,8 @@ describe('countDestructible / isLevelClear', () => {
 });
 
 describe('authored levels', () => {
-  it('has 4–6 levels', () => {
-    expect(LEVELS.length).toBeGreaterThanOrEqual(4);
-    expect(LEVELS.length).toBeLessThanOrEqual(6);
+  it('has at least 20 levels', () => {
+    expect(LEVELS.length).toBeGreaterThanOrEqual(20);
   });
 
   it('each level parses with at least one destructible brick', () => {
@@ -49,7 +48,19 @@ describe('authored levels', () => {
       expect(destructible).toBeGreaterThan(0);
       expect(level.ballSpeed).toBeGreaterThan(0);
       expect(level.rows.length).toBeGreaterThan(0);
+      expect(level.name.length).toBeGreaterThan(0);
     }
+  });
+
+  it('level names are unique', () => {
+    const names = LEVELS.map((l) => l.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('ball speed ramps across the campaign', () => {
+    const first = LEVELS[0]!.ballSpeed;
+    const last = LEVELS[LEVELS.length - 1]!.ballSpeed;
+    expect(last).toBeGreaterThan(first);
   });
 
   it('Castle level includes indestructible X bricks', () => {
@@ -59,5 +70,11 @@ describe('authored levels', () => {
     const xCount = bricks.filter((b) => b.kind === 'indestructible').length;
     expect(xCount).toBeGreaterThan(0);
     expect(destructible).toBe(bricks.length - xCount);
+  });
+
+  it('late levels include X bricks requiring fireball', () => {
+    const late = LEVELS.slice(-5);
+    const withX = late.filter((l) => l.rows.some((r) => r.includes('X')));
+    expect(withX.length).toBeGreaterThanOrEqual(3);
   });
 });
