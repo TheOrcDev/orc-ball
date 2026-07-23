@@ -9,13 +9,15 @@ export type FxThemeId =
   | 'bullet'
   | 'expand'
   | 'shrink'
-  | 'multi';
+  | 'multi'
+  | 'laser';
 
 export interface ActiveFxFlags {
   sticky: boolean;
   fireball: boolean;
   expand: boolean;
   shrink: boolean;
+  laser?: boolean;
   /** Brief multi flash after MULTIBALL collect (optional). */
   multiPulse?: boolean;
 }
@@ -132,11 +134,27 @@ const THEMES: Record<FxThemeId, FxTheme> = {
     wallIntensity: 0.9,
     label: 'MULTI',
   },
+  laser: {
+    id: 'laser',
+    style: 'electric',
+    primary: 0xff1744,
+    secondary: 0xff8a80,
+    glow: 0xb71c1c,
+    bgTop: 0x1f0a0e,
+    bgBottom: 0x0c0406,
+    sparkTint: [0xff1744, 0xff8a80, 0xff5252],
+    boltJitter: 10,
+    boltFrequencyMs: 90,
+    particleFrequency: 50,
+    wallIntensity: 0.75,
+    label: 'LASER',
+  },
 };
 
 export function resolveFxThemeId(flags: ActiveFxFlags): FxThemeId {
   if (flags.fireball) return 'bullet';
   if (flags.sticky) return 'glue';
+  if (flags.laser) return 'laser';
   if (flags.multiPulse) return 'multi';
   if (flags.expand) return 'expand';
   if (flags.shrink) return 'shrink';

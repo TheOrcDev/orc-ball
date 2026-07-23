@@ -9,6 +9,7 @@ import {
 import {
   applyPowerUp,
   createPowerUpState,
+  laserMuzzleXs,
   resetPowerUpState,
   tickPowerUpExpiry,
 } from './powerUpState';
@@ -72,6 +73,24 @@ describe('applyPowerUp', () => {
     expect(r.state.fireball).toBe(true);
     expect(r.state.active.has('FIREBALL')).toBe(true);
   });
+
+  it('LASER sets laser flag (timed, refreshable)', () => {
+    let s = createPowerUpState(3);
+    const first = applyPowerUp(s, 'LASER', 0, 10000);
+    expect(first.state.laser).toBe(true);
+    expect(first.state.active.has('LASER')).toBe(true);
+    const second = applyPowerUp(first.state, 'LASER', 5000, 10000);
+    expect(second.refreshed).toBe(true);
+    expect(second.state.expiresAt.get('LASER')).toBe(15000);
+  });
+});
+
+describe('laserMuzzleXs', () => {
+  it('places muzzles near left and right paddle ends', () => {
+    const m = laserMuzzleXs(400, 120, 6);
+    expect(m.left).toBe(400 - 60 + 6);
+    expect(m.right).toBe(400 + 60 - 6);
+  });
 });
 
 describe('tickPowerUpExpiry', () => {
@@ -103,6 +122,7 @@ describe('resetPowerUpState', () => {
     expect(s.paddleScale).toBe(PADDLE_SCALE_NORMAL);
     expect(s.sticky).toBe(false);
     expect(s.fireball).toBe(false);
+    expect(s.laser).toBe(false);
     expect(s.lives).toBe(5);
   });
 });

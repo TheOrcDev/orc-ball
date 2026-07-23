@@ -74,7 +74,7 @@ describe('structural audit of shipped source', () => {
     expect(names?.length).toBeGreaterThanOrEqual(20);
   });
 
-  it('has all six power-up types and PowerUpManager reset/timed rules', () => {
+  it('has all power-up types and PowerUpManager reset/timed rules', () => {
     for (const t of [
       'EXPAND',
       'SHRINK',
@@ -82,14 +82,16 @@ describe('structural audit of shipped source', () => {
       'STICKY',
       'FIREBALL',
       'EXTRA_LIFE',
+      'LASER',
     ]) {
       expect(types).toContain(t);
       expect(pum + readFileSync(join(SRC, 'logic/powerUpState.ts'), 'utf8')).toContain(
-        t === 'MULTIBALL' || t === 'EXTRA_LIFE' ? t : t,
+        t,
       );
     }
     expect(pum).toMatch(/reset\(/);
     expect(pum).toMatch(/scheduleTimed|delayedCall/);
+    expect(src).toMatch(/tryShootLasers|laserMuzzleXs|class Laser/);
   });
 
   it('generates textures at runtime and synthesizes SFX via WebAudio', () => {

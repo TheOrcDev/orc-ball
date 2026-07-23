@@ -40,7 +40,14 @@ export const POWERUP_DURATION_MS = 10000;
 /** Glue / bullet last a bit longer so they feel impactful. */
 export const POWERUP_DURATION_GLUE_MS = 15000;
 export const POWERUP_DURATION_BULLET_MS = 12000;
+export const POWERUP_DURATION_LASER_MS = 12000;
 export const DEFAULT_DROP_CHANCE = 0.2;
+
+/** Twin laser shots from paddle ends (LASER power). */
+export const LASER_SPEED = 520;
+export const LASER_WIDTH = 4;
+export const LASER_HEIGHT = 18;
+export const LASER_COOLDOWN_MS = 280;
 
 export const COLORS = {
   bg: 0x0a0a12,
@@ -56,6 +63,8 @@ export const COLORS = {
   sticky: 0x26a69a,
   fireball: 0xff7043,
   extraLife: 0xec407a,
+  laser: 0xff1744,
+  laserBeam: 0xff5252,
   fireTint: 0xff6d00,
   ui: 0xffffff,
   title: 0x4fc3f7,

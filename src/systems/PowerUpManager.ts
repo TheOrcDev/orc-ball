@@ -3,6 +3,7 @@ import {
   COLORS,
   POWERUP_DURATION_BULLET_MS,
   POWERUP_DURATION_GLUE_MS,
+  POWERUP_DURATION_LASER_MS,
   POWERUP_DURATION_MS,
 } from '../config';
 import type { PowerUpType } from '../data/types';
@@ -29,6 +30,7 @@ export type PowerUpHooks = {
     fireball: boolean;
     expand: boolean;
     shrink: boolean;
+    laser: boolean;
   }) => void;
   onMultiballVisual?: () => void;
 };
@@ -74,6 +76,10 @@ export class PowerUpManager {
     return this.state.fireball;
   }
 
+  get isLaser(): boolean {
+    return this.state.laser;
+  }
+
   get paddleScale(): number {
     return this.state.paddleScale;
   }
@@ -85,6 +91,7 @@ export class PowerUpManager {
   private durationFor(type: PowerUpType): number {
     if (type === 'STICKY') return POWERUP_DURATION_GLUE_MS;
     if (type === 'FIREBALL') return POWERUP_DURATION_BULLET_MS;
+    if (type === 'LASER') return POWERUP_DURATION_LASER_MS;
     return POWERUP_DURATION_MS;
   }
 
@@ -113,14 +120,18 @@ export class PowerUpManager {
     if (type === 'EXPAND') {
       this.clearTimer('SHRINK');
       this.paddle.setWidthScale(this.state.paddleScale);
-      this.paddle.clearTint();
-      this.paddle.setTint(COLORS.expand);
+      if (!this.state.sticky) {
+        this.paddle.clearTint();
+        this.paddle.setTint(COLORS.expand);
+      }
       this.scheduleTimed('EXPAND', duration);
       this.emitEffects();
     } else if (type === 'SHRINK') {
       this.clearTimer('EXPAND');
       this.paddle.setWidthScale(this.state.paddleScale);
-      this.paddle.setTint(COLORS.shrink);
+      if (!this.state.sticky) {
+        this.paddle.setTint(COLORS.shrink);
+      }
       this.scheduleTimed('SHRINK', duration);
       this.emitEffects();
     } else if (type === 'STICKY') {
@@ -130,6 +141,9 @@ export class PowerUpManager {
     } else if (type === 'FIREBALL') {
       this.applyFireballToAll(true);
       this.scheduleTimed('FIREBALL', duration);
+      this.emitEffects();
+    } else if (type === 'LASER') {
+      this.scheduleTimed('LASER', duration);
       this.emitEffects();
     }
   }
@@ -148,6 +162,7 @@ export class PowerUpManager {
       fireball: this.state.fireball,
       expand: this.state.active.has('EXPAND'),
       shrink: this.state.active.has('SHRINK'),
+      laser: this.state.laser,
     });
   }
 
@@ -188,6 +203,10 @@ export class PowerUpManager {
     if (effect === 'FIREBALL') {
       this.state.fireball = false;
       this.applyFireballToAll(false);
+      this.emitEffects();
+    }
+    if (effect === 'LASER') {
+      this.state.laser = false;
       this.emitEffects();
     }
   }

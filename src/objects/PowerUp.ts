@@ -9,6 +9,7 @@ const TEXTURE_BY_TYPE: Record<PowerUpType, string> = {
   STICKY: 'powerup-sticky',
   FIREBALL: 'powerup-fireball',
   EXTRA_LIFE: 'powerup-extralife',
+  LASER: 'powerup-laser',
 };
 
 export const POWERUP_COLOR: Record<PowerUpType, number> = {
@@ -18,9 +19,10 @@ export const POWERUP_COLOR: Record<PowerUpType, number> = {
   STICKY: COLORS.sticky,
   FIREBALL: COLORS.fireball,
   EXTRA_LIFE: COLORS.extraLife,
+  LASER: COLORS.laser,
 };
 
-/** Player-facing names (STICKY = Glue, FIREBALL = Bullet). */
+/** Player-facing names (STICKY = Glue, FIREBALL = Bullet, LASER = Laser). */
 export const POWERUP_LABEL: Record<PowerUpType, string> = {
   EXPAND: 'EXPAND',
   SHRINK: 'SHRINK',
@@ -28,6 +30,7 @@ export const POWERUP_LABEL: Record<PowerUpType, string> = {
   STICKY: 'GLUE',
   FIREBALL: 'BULLET',
   EXTRA_LIFE: 'LIFE',
+  LASER: 'LASER',
 };
 
 export const POWERUP_LETTER: Record<PowerUpType, string> = {
@@ -37,6 +40,7 @@ export const POWERUP_LETTER: Record<PowerUpType, string> = {
   STICKY: 'G',
   FIREBALL: 'B',
   EXTRA_LIFE: 'L',
+  LASER: 'R',
 };
 
 export class PowerUp extends Phaser.Physics.Arcade.Image {

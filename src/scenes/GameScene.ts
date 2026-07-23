@@ -9,6 +9,7 @@ import {
   COLORS,
   DEFAULT_BALL_SPEED,
   HEIGHT,
+  LASER_COOLDOWN_MS,
   MAX_BALL_SPEED,
   MULTIBALL_CAP,
   PADDLE_HIT_COOLDOWN_MS,
@@ -34,10 +35,12 @@ import {
   shouldLoseLife,
   velocityAngleDeg,
 } from '../logic/multiball';
+import { laserMuzzleXs } from '../logic/powerUpState';
 import { velocityFromAngle } from '../logic/steering';
 import { isTapGesture, prefersTouchUi } from '../logic/touch';
 import { Ball } from '../objects/Ball';
 import { Brick } from '../objects/Brick';
+import { Laser } from '../objects/Laser';
 import { Paddle } from '../objects/Paddle';
 import { PowerUp, POWERUP_LABEL } from '../objects/PowerUp';
 import { BoardFx } from '../systems/BoardFx';
@@ -53,8 +56,10 @@ export class GameScene extends Phaser.Scene {
   private balls!: Phaser.Physics.Arcade.Group;
   private bricks!: Phaser.Physics.Arcade.StaticGroup;
   private powerUps!: Phaser.Physics.Arcade.Group;
+  private lasers!: Phaser.Physics.Arcade.Group;
   private powerUpManager!: PowerUpManager;
   private sfx!: Sfx;
+  private lastLaserShotAt = 0;
   private breakEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private fireTrailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private spaceKey?: Phaser.Input.Keyboard.Key;
@@ -136,6 +141,13 @@ export class GameScene extends Phaser.Scene {
 
     this.registry.set('effectGlue', false);
     this.registry.set('effectBullet', false);
+    this.registry.set('effectLaser', false);
+
+    this.lasers = this.physics.add.group({
+      classType: Laser,
+      runChildUpdate: false,
+      maxSize: 24,
+    });
 
     this.powerUpManager = new PowerUpManager(
       this,
@@ -152,6 +164,7 @@ export class GameScene extends Phaser.Scene {
         onEffectsChanged: (effects) => {
           this.registry.set('effectGlue', effects.sticky);
           this.registry.set('effectBullet', effects.fireball);
+          this.registry.set('effectLaser', effects.laser);
           this.boardFx.setEffects(effects, this.time.now);
         },
         onMultiballVisual: () => {
@@ -203,6 +216,13 @@ export class GameScene extends Phaser.Scene {
       this.powerUps,
       this.paddle,
       this.onCollectPowerUp as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.lasers,
+      this.bricks,
+      this.onLaserBrick as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined,
       this,
     );
@@ -351,7 +371,7 @@ export class GameScene extends Phaser.Scene {
         duration,
       )
     ) {
-      this.launchStuckBalls();
+      this.handleSpaceAction();
     }
   }
 
@@ -386,7 +406,7 @@ export class GameScene extends Phaser.Scene {
       p.event?.stopPropagation?.();
       this.ignoreNextPointerUp = true;
       this.paddle.setPointerTargetX(null);
-      this.launchStuckBalls();
+      this.handleSpaceAction();
       this.tweens.add({
         targets: this.launchBtn,
         scaleX: 0.92,
@@ -489,6 +509,94 @@ export class GameScene extends Phaser.Scene {
       );
       this.sfx.paddleHit();
     }
+  }
+
+  /**
+   * SPACE while LASER is active and no stuck balls: twin beams from
+   * left/right paddle ends.
+   */
+  private tryShootLasers(): boolean {
+    if (this.isPaused || this.pausedForOverlay) return false;
+    if (!this.powerUpManager.isLaser) return false;
+    const stuck = (this.balls.getChildren() as Ball[]).some(
+      (b) => b.active && b.stuckToPaddle,
+    );
+    if (stuck) return false;
+
+    const now = this.time.now;
+    if (now - this.lastLaserShotAt < LASER_COOLDOWN_MS) return false;
+    this.lastLaserShotAt = now;
+
+    const { left, right } = laserMuzzleXs(
+      this.paddle.x,
+      this.paddle.displayWidth,
+    );
+    const y = this.paddle.faceTop;
+    this.spawnLaser(left, y);
+    this.spawnLaser(right, y);
+    this.sfx.paddleHit();
+    return true;
+  }
+
+  private spawnLaser(x: number, y: number): void {
+    const laser = new Laser(this, x, y);
+    this.lasers.add(laser);
+  }
+
+  private onLaserBrick: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    obj1,
+    obj2,
+  ) => {
+    const pair = resolvePair(
+      obj1,
+      obj2,
+      (o): o is Laser => o instanceof Laser,
+      (o): o is Brick => o instanceof Brick,
+    );
+    if (!pair) return;
+    const { a: laser, b: brick } = pair;
+    if (!laser.active || !brick.active) return;
+
+    // Lasers damage HP bricks; bounce off / ignore indestructible
+    if (brick.isIndestructible) {
+      laser.destroy();
+      this.sfx.brickHit(3);
+      return;
+    }
+
+    laser.destroy();
+    const color = brick.tintColor;
+    const result = brick.takeHit(false);
+    if (result.damaged && !result.destroyed) {
+      this.sfx.brickHit(brick.hp);
+      this.addScore(SCORE_PER_HIT);
+    }
+    if (result.destroyed) {
+      this.destructibleRemaining = Math.max(0, this.destructibleRemaining - 1);
+      this.addScore(SCORE_PER_BREAK);
+      this.sfx.brickBreak();
+      this.breakEmitter.setParticleTint(color);
+      this.breakEmitter.explode(8, brick.x, brick.y);
+      this.boardFx.crackleAt(brick.x, brick.y);
+      this.maybeDropPowerUp(brick.x, brick.y);
+      brick.destroy();
+      if (this.destructibleRemaining <= 0) {
+        this.onLevelClear();
+      }
+    }
+  };
+
+  /** SPACE: launch stuck balls, else fire lasers if equipped. */
+  private handleSpaceAction(): void {
+    if (this.isPaused || this.pausedForOverlay) return;
+    const hadStuck = (this.balls.getChildren() as Ball[]).some(
+      (b) => b.active && b.stuckToPaddle,
+    );
+    if (hadStuck) {
+      this.launchStuckBalls();
+      return;
+    }
+    this.tryShootLasers();
   }
 
   /**
@@ -802,13 +910,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-      this.launchStuckBalls();
+      this.handleSpaceAction();
     }
 
-    // Pulse LAUNCH when a ball is waiting on the paddle
+    // Pulse LAUNCH when a ball is waiting or lasers are armed
     if (this.launchBtn) {
-      const waiting = stuck.length > 0;
+      const waiting = stuck.length > 0 || this.powerUpManager.isLaser;
       this.launchBtn.setAlpha(waiting ? 1 : 0.55);
+    }
+
+    // Cull lasers past top of screen
+    for (const laser of this.lasers.getChildren() as Laser[]) {
+      if (laser.active && laser.y < -20) laser.destroy();
     }
 
     // Maintain constant speed + fire trail

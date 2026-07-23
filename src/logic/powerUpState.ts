@@ -7,13 +7,19 @@ import {
   POWERUP_DURATION_MS,
 } from '../config';
 
-export type TimedEffect = 'EXPAND' | 'SHRINK' | 'STICKY' | 'FIREBALL';
+export type TimedEffect =
+  | 'EXPAND'
+  | 'SHRINK'
+  | 'STICKY'
+  | 'FIREBALL'
+  | 'LASER';
 
 export const TIMED_EFFECTS: readonly TimedEffect[] = [
   'EXPAND',
   'SHRINK',
   'STICKY',
   'FIREBALL',
+  'LASER',
 ] as const;
 
 export interface PowerUpState {
@@ -23,6 +29,7 @@ export interface PowerUpState {
   paddleScale: number;
   sticky: boolean;
   fireball: boolean;
+  laser: boolean;
   lives: number;
 }
 
@@ -33,6 +40,7 @@ export function createPowerUpState(lives: number): PowerUpState {
     paddleScale: PADDLE_SCALE_NORMAL,
     sticky: false,
     fireball: false,
+    laser: false,
     lives,
   };
 }
@@ -68,6 +76,7 @@ export function applyPowerUp(
     paddleScale: state.paddleScale,
     sticky: state.sticky,
     fireball: state.fireball,
+    laser: state.laser,
     lives: state.lives,
   };
 
@@ -98,7 +107,6 @@ export function applyPowerUp(
   const expiry = nowMs + durationMs;
 
   if (type === 'EXPAND') {
-    // Mutual exclusion: cancel SHRINK
     if (next.active.has('SHRINK')) {
       next.active.delete('SHRINK');
       next.expiresAt.delete('SHRINK');
@@ -158,6 +166,19 @@ export function applyPowerUp(
     };
   }
 
+  if (type === 'LASER') {
+    next.active.add('LASER');
+    next.expiresAt.set('LASER', expiry);
+    next.laser = true;
+    return {
+      state: next,
+      spawnMultiball: false,
+      gainedLife: false,
+      refreshed: wasActive,
+      applied: true,
+    };
+  }
+
   return {
     state: next,
     spawnMultiball: false,
@@ -178,6 +199,7 @@ export function tickPowerUpExpiry(
     paddleScale: state.paddleScale,
     sticky: state.sticky,
     fireball: state.fireball,
+    laser: state.laser,
     lives: state.lives,
   };
 
@@ -187,7 +209,6 @@ export function tickPowerUpExpiry(
       next.active.delete(effect);
       next.expiresAt.delete(effect);
       if (effect === 'EXPAND' || effect === 'SHRINK') {
-        // Revert width only if the other width effect isn't active
         if (!next.active.has('EXPAND') && !next.active.has('SHRINK')) {
           next.paddleScale = PADDLE_SCALE_NORMAL;
         } else if (next.active.has('EXPAND')) {
@@ -198,6 +219,7 @@ export function tickPowerUpExpiry(
       }
       if (effect === 'STICKY') next.sticky = false;
       if (effect === 'FIREBALL') next.fireball = false;
+      if (effect === 'LASER') next.laser = false;
     }
   }
   return next;
@@ -214,6 +236,7 @@ export function resetPowerUpState(
     paddleScale: PADDLE_SCALE_NORMAL,
     sticky: false,
     fireball: false,
+    laser: false,
     lives: keepLives ? state.lives : state.lives,
   };
 }
@@ -222,4 +245,17 @@ export function paddleScaleForState(state: PowerUpState): number {
   if (state.active.has('EXPAND')) return PADDLE_SCALE_EXPAND;
   if (state.active.has('SHRINK')) return PADDLE_SCALE_SHRINK;
   return PADDLE_SCALE_NORMAL;
+}
+
+/** World X positions of twin laser muzzles at paddle ends. */
+export function laserMuzzleXs(
+  paddleX: number,
+  paddleDisplayWidth: number,
+  inset = 6,
+): { left: number; right: number } {
+  const half = paddleDisplayWidth / 2;
+  return {
+    left: paddleX - half + inset,
+    right: paddleX + half - inset,
+  };
 }

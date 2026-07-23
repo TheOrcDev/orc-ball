@@ -4,12 +4,24 @@ import {
   BALL_RADIUS,
   BRICK_HEIGHT,
   BRICK_WIDTH,
+  LASER_HEIGHT,
+  LASER_WIDTH,
   PADDLE_HEIGHT,
   PADDLE_WIDTH,
   POWERUP_SIZE,
 } from '../config';
-import type { PowerUpType } from '../data/types';
+import { ALL_POWER_UP_TYPES, type PowerUpType } from '../data/types';
 import { POWERUP_COLOR, POWERUP_LETTER } from '../objects/PowerUp';
+
+const POWERUP_TEX: Record<PowerUpType, string> = {
+  EXPAND: 'powerup-expand',
+  SHRINK: 'powerup-shrink',
+  MULTIBALL: 'powerup-multiball',
+  STICKY: 'powerup-sticky',
+  FIREBALL: 'powerup-fireball',
+  EXTRA_LIFE: 'powerup-extralife',
+  LASER: 'powerup-laser',
+};
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -26,32 +38,30 @@ export class BootScene extends Phaser.Scene {
     this.bakeBall();
     this.bakeBrick();
     this.bakeParticle();
+    this.bakeLaser();
 
-    const types: PowerUpType[] = [
-      'EXPAND',
-      'SHRINK',
-      'MULTIBALL',
-      'STICKY',
-      'FIREBALL',
-      'EXTRA_LIFE',
-    ];
-
-    for (const type of types) {
-      const texKey =
-        type === 'EXTRA_LIFE'
-          ? 'powerup-extralife'
-          : type === 'MULTIBALL'
-            ? 'powerup-multiball'
-            : type === 'FIREBALL'
-              ? 'powerup-fireball'
-              : type === 'EXPAND'
-                ? 'powerup-expand'
-                : type === 'SHRINK'
-                  ? 'powerup-shrink'
-                  : 'powerup-sticky';
-
-      this.bakePowerUpTexture(texKey, POWERUP_COLOR[type], POWERUP_LETTER[type]);
+    for (const type of ALL_POWER_UP_TYPES) {
+      this.bakePowerUpTexture(
+        POWERUP_TEX[type],
+        POWERUP_COLOR[type],
+        POWERUP_LETTER[type],
+      );
     }
+  }
+
+  /** Thin red laser bolt (fires upward from paddle ends). */
+  private bakeLaser(): void {
+    const w = LASER_WIDTH;
+    const h = LASER_HEIGHT;
+    const g = this.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(0xff1744, 1);
+    g.fillRoundedRect(0, 0, w, h, 1);
+    g.fillStyle(0xff8a80, 0.9);
+    g.fillRect(1, 0, Math.max(1, w - 2), h);
+    g.fillStyle(0xffffff, 0.75);
+    g.fillRect(Math.floor(w / 2), 0, 1, h);
+    g.generateTexture('laser', w, h);
+    g.destroy();
   }
 
   /** Beveled 3D-ish paddle with highlight rim. */

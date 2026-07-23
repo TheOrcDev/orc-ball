@@ -64,7 +64,11 @@ export class UIScene extends Phaser.Scene {
     if (key === 'score') {
       this.maybeUpdateHighScore();
     }
-    if (key === 'effectGlue' || key === 'effectBullet') {
+    if (
+      key === 'effectGlue' ||
+      key === 'effectBullet' ||
+      key === 'effectLaser'
+    ) {
       this.refreshEffects();
     }
   }
@@ -81,11 +85,14 @@ export class UIScene extends Phaser.Scene {
   private refreshEffects(): void {
     const glue = Boolean(this.registry.get('effectGlue'));
     const bullet = Boolean(this.registry.get('effectBullet'));
+    const laser = Boolean(this.registry.get('effectLaser'));
     const parts: string[] = [];
-    if (glue) parts.push('GLUE (launch to fire)');
+    if (glue) parts.push('GLUE (launch to free)');
     if (bullet) parts.push('BULLET');
+    if (laser) parts.push('LASER (SPACE)');
     this.effectsText.setText(parts.join('  ·  '));
-    if (glue && bullet) this.effectsText.setColor('#ffab40');
+    if (laser) this.effectsText.setColor('#ff5252');
+    else if (glue && bullet) this.effectsText.setColor('#ffab40');
     else if (glue) this.effectsText.setColor('#26a69a');
     else if (bullet) this.effectsText.setColor('#ff7043');
     else this.effectsText.setColor('#ffd54f');

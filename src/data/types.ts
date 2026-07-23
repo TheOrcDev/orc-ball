@@ -6,7 +6,8 @@ export type PowerUpType =
   | 'MULTIBALL'
   | 'STICKY'
   | 'FIREBALL'
-  | 'EXTRA_LIFE';
+  | 'EXTRA_LIFE'
+  | 'LASER';
 
 export type BrickCell = '.' | '1' | '2' | '3' | 'X';
 
@@ -34,4 +35,5 @@ export const ALL_POWER_UP_TYPES: readonly PowerUpType[] = [
   'STICKY',
   'FIREBALL',
   'EXTRA_LIFE',
+  'LASER',
 ] as const;
