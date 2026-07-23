@@ -143,57 +143,17 @@ export class BootScene extends Phaser.Scene {
     g.destroy();
   }
 
-  /**
-   * Shiny metallic 3D sphere — chrome-like shading, strong specular.
-   * Baked at exact gameplay size so physics radius matches the sprite (no scale mismatch).
-   */
+  /** Simple light ball with soft highlight — native size for 1:1 physics. */
   private bakeBall(): void {
     const r = BALL_RADIUS;
     const d = BALL_RADIUS * 2;
     const g = this.make.graphics({ x: 0, y: 0 });
-    const cx = r;
-    const cy = r;
-
-    // Deep metal base
-    g.fillStyle(0x546e7a, 1);
-    g.fillCircle(cx, cy, r);
-
-    // Concentric metallic bands (fake spherical gradient)
-    const bands: { rad: number; color: number; alpha: number }[] = [
-      { rad: 0.95, color: 0x37474f, alpha: 0.55 },
-      { rad: 0.82, color: 0x607d8b, alpha: 0.5 },
-      { rad: 0.68, color: 0x90a4ae, alpha: 0.55 },
-      { rad: 0.52, color: 0xb0bec5, alpha: 0.5 },
-      { rad: 0.38, color: 0xcfd8dc, alpha: 0.55 },
-      { rad: 0.24, color: 0xeceff1, alpha: 0.65 },
-    ];
-    for (const b of bands) {
-      g.fillStyle(b.color, b.alpha);
-      g.fillCircle(cx - r * 0.15, cy - r * 0.18, r * b.rad);
-    }
-
-    // Lower occluded hemisphere (depth)
-    g.fillStyle(0x263238, 0.45);
-    g.fillCircle(cx + r * 0.18, cy + r * 0.3, r * 0.65);
-
-    // Cool blue metal reflection streak
-    g.fillStyle(0x81d4fa, 0.3);
-    g.fillEllipse(cx - r * 0.1, cy - r * 0.05, r * 0.85, r * 0.4);
-
-    // Primary specular highlight (chrome hot spot)
-    g.fillStyle(0xffffff, 0.95);
-    g.fillCircle(cx - r * 0.3, cy - r * 0.32, r * 0.28);
-    g.fillStyle(0xffffff, 0.5);
-    g.fillCircle(cx - r * 0.25, cy - r * 0.28, r * 0.38);
-
-    // Secondary rim light
-    g.fillStyle(0xe1f5fe, 0.4);
-    g.fillCircle(cx + r * 0.32, cy + r * 0.22, r * 0.16);
-
-    // Thin dark rim for sphere edge
-    g.lineStyle(1, 0x102027, 0.95);
-    g.strokeCircle(cx, cy, r - 0.5);
-
+    g.fillStyle(0xe8eaf6, 1);
+    g.fillCircle(r, r, r);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(r - 2, r - 2, r * 0.35);
+    g.fillStyle(0x90a4ae, 0.35);
+    g.fillCircle(r + 2, r + 3, r * 0.45);
     g.generateTexture('ball', d, d);
     g.destroy();
   }

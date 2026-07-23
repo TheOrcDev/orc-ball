@@ -23,12 +23,10 @@ export class Ball extends Phaser.Physics.Arcade.Image {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // Texture size === gameplay size (no setDisplaySize) so body scale stays 1:1
     this.setOrigin(0.5, 0.5);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(BALL_RADIUS);
-    body.setOffset(0, 0);
     // Bounce is overridden on paddle hits; kept for walls/bricks
     body.setBounce(1, 1);
     body.setCollideWorldBounds(true);
