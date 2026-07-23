@@ -35,6 +35,7 @@ import {
   velocityAngleDeg,
 } from '../logic/multiball';
 import { velocityFromAngle } from '../logic/steering';
+import { isTapGesture, prefersTouchUi } from '../logic/touch';
 import { Ball } from '../objects/Ball';
 import { Brick } from '../objects/Brick';
 import { Paddle } from '../objects/Paddle';
@@ -55,13 +56,22 @@ export class GameScene extends Phaser.Scene {
   private sfx!: Sfx;
   private breakEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private fireTrailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
-  private spaceKey!: Phaser.Input.Keyboard.Key;
+  private spaceKey?: Phaser.Input.Keyboard.Key;
   private levelIndex = 0;
   private destructibleRemaining = 0;
   private ballSpeed = DEFAULT_BALL_SPEED;
   private pausedForOverlay = false;
   private awaitingAdvance = false;
   private gameOverFlag = false;
+  /** Touch / small-screen chrome (LAUNCH button + hints). */
+  private touchUi = false;
+  private launchBtn?: Phaser.GameObjects.Container;
+  private touchHint?: Phaser.GameObjects.Text;
+  private pointerDownAt = 0;
+  private pointerDownX = 0;
+  private pointerDownY = 0;
+  private pointerDragging = false;
+  private ignoreNextPointerUp = false;
 
   constructor() {
     super('GameScene');
@@ -81,7 +91,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBoundsCollision(true, true, true, false);
 
     this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D');
-    this.spaceKey = this.input.keyboard!.addKey(
+    this.spaceKey = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
     );
 
@@ -95,7 +105,10 @@ export class GameScene extends Phaser.Scene {
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
 
+    this.touchUi = prefersTouchUi();
     this.paddle = new Paddle(this);
+    this.setupPointerControls();
+    if (this.touchUi) this.createTouchChrome();
     this.balls = this.physics.add.group({
       classType: Ball,
       runChildUpdate: false,
@@ -248,16 +261,151 @@ export class GameScene extends Phaser.Scene {
     return ball;
   }
 
+  private setupPointerControls(): void {
+    this.input.on('pointerdown', this.onPointerDown, this);
+    this.input.on('pointermove', this.onPointerMove, this);
+    this.input.on('pointerup', this.onPointerUp, this);
+    this.events.on('shutdown', () => {
+      this.input.off('pointerdown', this.onPointerDown, this);
+      this.input.off('pointermove', this.onPointerMove, this);
+      this.input.off('pointerup', this.onPointerUp, this);
+    });
+  }
+
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.pausedForOverlay) {
+      this.handleOverlaySpace();
+      return;
+    }
+    // Launch button handles its own press
+    if (this.isPointerOnLaunchBtn(pointer)) return;
+
+    this.pointerDownAt = this.time.now;
+    this.pointerDownX = pointer.x;
+    this.pointerDownY = pointer.y;
+    this.pointerDragging = false;
+    this.paddle.setPointerTargetX(pointer.x);
+  }
+
+  private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!pointer.isDown || this.pausedForOverlay) return;
+    if (this.isPointerOnLaunchBtn(pointer) && !this.paddle.hasPointerTarget) {
+      return;
+    }
+    if (
+      Math.hypot(pointer.x - this.pointerDownX, pointer.y - this.pointerDownY) >
+      12
+    ) {
+      this.pointerDragging = true;
+    }
+    this.paddle.setPointerTargetX(pointer.x);
+  }
+
+  private onPointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.ignoreNextPointerUp) {
+      this.ignoreNextPointerUp = false;
+      this.paddle.setPointerTargetX(null);
+      return;
+    }
+    if (this.pausedForOverlay) {
+      this.paddle.setPointerTargetX(null);
+      return;
+    }
+
+    const wasDrag = this.pointerDragging;
+    this.paddle.setPointerTargetX(null);
+
+    if (this.isPointerOnLaunchBtn(pointer)) return;
+
+    const duration = this.time.now - this.pointerDownAt;
+    if (
+      !wasDrag &&
+      isTapGesture(
+        this.pointerDownX,
+        this.pointerDownY,
+        pointer.x,
+        pointer.y,
+        duration,
+      )
+    ) {
+      this.launchStuckBalls();
+    }
+  }
+
+  private isPointerOnLaunchBtn(pointer: Phaser.Input.Pointer): boolean {
+    if (!this.launchBtn) return false;
+    const b = this.launchBtn.getBounds();
+    return b.contains(pointer.x, pointer.y);
+  }
+
+  private createTouchChrome(): void {
+    // LAUNCH button — bottom-right, clear of paddle path center
+    const bx = WIDTH - 72;
+    const by = HEIGHT - 56;
+    const bg = this.add
+      .rectangle(0, 0, 100, 48, 0x4fc3f7, 0.92)
+      .setStrokeStyle(2, 0xffffff, 0.85)
+      .setOrigin(0.5);
+    const label = this.add
+      .text(0, 0, 'LAUNCH', {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#0a0a12',
+      })
+      .setOrigin(0.5);
+
+    this.launchBtn = this.add.container(bx, by, [bg, label]);
+    this.launchBtn.setDepth(1000);
+    this.launchBtn.setScrollFactor(0);
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event?.stopPropagation?.();
+      this.ignoreNextPointerUp = true;
+      this.paddle.setPointerTargetX(null);
+      this.launchStuckBalls();
+      this.tweens.add({
+        targets: this.launchBtn,
+        scaleX: 0.92,
+        scaleY: 0.92,
+        duration: 60,
+        yoyo: true,
+      });
+    });
+
+    this.touchHint = this.add
+      .text(WIDTH / 2, HEIGHT - 14, 'Drag to move  ·  Tap / LAUNCH to serve', {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#78909c',
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(1000)
+      .setScrollFactor(0);
+
+    // Fade hint after a few seconds
+    this.time.delayedCall(5000, () => {
+      if (this.touchHint?.active) {
+        this.tweens.add({
+          targets: this.touchHint,
+          alpha: 0.35,
+          duration: 600,
+        });
+      }
+    });
+  }
+
   private launchStuckBalls(): void {
     const stuck = (this.balls.getChildren() as Ball[]).filter(
       (b) => b.active && b.stuckToPaddle,
     );
-    const paddleBody = this.paddle.body as Phaser.Physics.Arcade.Body;
+    if (stuck.length === 0) return;
+    const paddleVx = this.paddle.getHorizontalVelocity();
     for (const ball of stuck) {
       ball.launchFromPaddle(
         this.paddle.x,
         this.paddle.displayWidth,
-        paddleBody.velocity.x,
+        paddleVx,
       );
       this.sfx.paddleHit();
     }
@@ -310,7 +458,7 @@ export class GameScene extends Phaser.Scene {
     ball.applyPaddleHit(
       paddle.x,
       paddle.displayWidth,
-      paddleBody.velocity.x,
+      this.paddle.getHorizontalVelocity() || paddleBody.velocity.x,
       now,
     );
     this.sfx.paddleHit();
@@ -536,16 +684,17 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.pausedForOverlay) {
-      if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+      if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
         this.handleOverlaySpace();
       }
+      // Touch: pointerdown already advances overlay
       return;
     }
 
     this.paddle.update(time, delta);
 
     // Stuck balls follow paddle. Auto-launch only when NOT under GLUE
-    // (glue requires SPACE). Initial serve also auto-launches after timeout.
+    // (glue requires SPACE / LAUNCH). Initial serve auto-launches after timeout.
     const stuck = (this.balls.getChildren() as Ball[]).filter(
       (b) => b.active && b.stuckToPaddle,
     );
@@ -559,18 +708,19 @@ export class GameScene extends Phaser.Scene {
         !glueActive &&
         time - ball.stuckSince >= STUCK_AUTO_LAUNCH_MS
       ) {
-        const paddleBody = this.paddle.body as Phaser.Physics.Arcade.Body;
-        ball.launchFromPaddle(
-          this.paddle.x,
-          this.paddle.displayWidth,
-          paddleBody.velocity.x,
-        );
-        this.sfx.paddleHit();
+        this.launchStuckBalls();
+        break;
       }
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+    if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
       this.launchStuckBalls();
+    }
+
+    // Pulse LAUNCH when a ball is waiting on the paddle
+    if (this.launchBtn) {
+      const waiting = stuck.length > 0;
+      this.launchBtn.setAlpha(waiting ? 1 : 0.55);
     }
 
     // Maintain constant speed + fire trail

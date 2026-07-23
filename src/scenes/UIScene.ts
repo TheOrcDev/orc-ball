@@ -82,7 +82,7 @@ export class UIScene extends Phaser.Scene {
     const glue = Boolean(this.registry.get('effectGlue'));
     const bullet = Boolean(this.registry.get('effectBullet'));
     const parts: string[] = [];
-    if (glue) parts.push('GLUE (SPACE to launch)');
+    if (glue) parts.push('GLUE (launch to fire)');
     if (bullet) parts.push('BULLET');
     this.effectsText.setText(parts.join('  ·  '));
     if (glue && bullet) this.effectsText.setColor('#ffab40');

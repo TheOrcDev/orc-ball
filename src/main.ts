@@ -22,6 +22,11 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
+  input: {
+    activePointers: 3,
+    // Avoid browser scrolling/zooming while playing on mobile
+    windowEvents: true,
+  },
   scene: [BootScene, MenuScene, GameScene, UIScene],
 };
 

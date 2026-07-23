@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, HEIGHT, HIGH_SCORE_KEY, START_LIVES, WIDTH } from '../config';
+import { prefersTouchUi } from '../logic/touch';
 import { Sfx } from '../systems/Sfx';
 
 export class MenuScene extends Phaser.Scene {
@@ -14,11 +15,12 @@ export class MenuScene extends Phaser.Scene {
     this.sfx = new Sfx(this);
 
     const high = this.loadHighScore();
+    const touch = prefersTouchUi();
 
     this.add
       .text(WIDTH / 2, HEIGHT * 0.28, 'ORC-BALL', {
         fontFamily: 'monospace',
-        fontSize: '56px',
+        fontSize: touch ? '48px' : '56px',
         color: '#4fc3f7',
         fontStyle: 'bold',
       })
@@ -33,21 +35,28 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(WIDTH / 2, HEIGHT * 0.55, 'Press SPACE to Start', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#ffffff',
-      })
+      .text(
+        WIDTH / 2,
+        HEIGHT * 0.55,
+        touch ? 'Tap to Start' : 'Press SPACE to Start',
+        {
+          fontFamily: 'monospace',
+          fontSize: '22px',
+          color: '#ffffff',
+        },
+      )
       .setOrigin(0.5);
 
     this.add
       .text(
         WIDTH / 2,
         HEIGHT * 0.62,
-        '← → / A D  move    SPACE  serve / launch',
+        touch
+          ? 'Drag to move paddle  ·  Tap / LAUNCH to serve'
+          : '← → / A D  move    SPACE  serve / launch',
         {
           fontFamily: 'monospace',
-          fontSize: '14px',
+          fontSize: touch ? '13px' : '14px',
           color: '#78909c',
         },
       )
@@ -57,7 +66,9 @@ export class MenuScene extends Phaser.Scene {
       .text(
         WIDTH / 2,
         HEIGHT * 0.69,
-        'G = GLUE (stick + SPACE)   B = BULLET (through bricks)',
+        touch
+          ? 'G = GLUE (stick + launch)   B = BULLET'
+          : 'G = GLUE (stick + SPACE)   B = BULLET (through bricks)',
         {
           fontFamily: 'monospace',
           fontSize: '12px',
@@ -82,7 +93,7 @@ export class MenuScene extends Phaser.Scene {
     );
     space?.once('down', () => this.startGame());
 
-    // Also allow click/tap as unlock gesture
+    // Click/tap unlocks audio and starts (required on mobile)
     this.input.once('pointerdown', () => this.startGame());
   }
 
