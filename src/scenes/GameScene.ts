@@ -13,6 +13,8 @@ import {
   MAX_BALL_SPEED,
   MULTIBALL_CAP,
   PADDLE_HIT_COOLDOWN_MS,
+  PADDLE_Y,
+  PADDLE_Y_TOUCH,
   SCORE_PER_BREAK,
   SCORE_PER_HIT,
   SCORE_PER_X_BREAK,
@@ -92,6 +94,8 @@ export class GameScene extends Phaser.Scene {
   private pointerDownX = 0;
   private pointerDownY = 0;
   private pointerDragging = false;
+  /** Relative drag: paddle.x = pointer.x + dragOffsetX (finger can sit below paddle). */
+  private dragOffsetX = 0;
   private ignoreNextPointerUp = false;
   private boardFx!: BoardFx;
 
@@ -138,7 +142,9 @@ export class GameScene extends Phaser.Scene {
     this.boardFx = new BoardFx(this);
 
     this.touchUi = prefersTouchUi();
-    this.paddle = new Paddle(this);
+    // Raise paddle on touch so the finger rest zone is under the board
+    const paddleY = this.touchUi ? PADDLE_Y_TOUCH : PADDLE_Y;
+    this.paddle = new Paddle(this, undefined, paddleY);
     this.paddle.setDepth(10);
     this.setupPointerControls();
     if (this.touchUi) this.createTouchChrome();
@@ -341,7 +347,9 @@ export class GameScene extends Phaser.Scene {
     this.pointerDownX = pointer.x;
     this.pointerDownY = pointer.y;
     this.pointerDragging = false;
-    this.paddle.setPointerTargetX(pointer.x);
+    // Keep finger free of the paddle: follow X with the grab offset
+    this.dragOffsetX = this.paddle.x - pointer.x;
+    this.paddle.setPointerTargetX(pointer.x + this.dragOffsetX);
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
@@ -355,7 +363,7 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.pointerDragging = true;
     }
-    this.paddle.setPointerTargetX(pointer.x);
+    this.paddle.setPointerTargetX(pointer.x + this.dragOffsetX);
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
@@ -396,11 +404,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTouchChrome(): void {
-    // LAUNCH button — bottom-right, clear of paddle path center
+    // LAUNCH stays top-right of the finger zone so drag area stays free
     const bx = WIDTH - 72;
-    const by = HEIGHT - 56;
+    const by = HEIGHT - 36;
     const bg = this.add
-      .rectangle(0, 0, 100, 48, 0x4fc3f7, 0.92)
+      .rectangle(0, 0, 100, 44, 0x4fc3f7, 0.92)
       .setStrokeStyle(2, 0xffffff, 0.85)
       .setOrigin(0.5);
     const label = this.add
@@ -430,22 +438,27 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
+    // Hint in the finger zone under the raised paddle
     this.touchHint = this.add
-      .text(WIDTH / 2, HEIGHT - 14, 'Drag to move  ·  Tap / LAUNCH to serve', {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#78909c',
-      })
+      .text(
+        WIDTH / 2,
+        HEIGHT - 12,
+        'Drag below paddle to move  ·  Tap / LAUNCH to serve',
+        {
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          color: '#78909c',
+        },
+      )
       .setOrigin(0.5, 1)
       .setDepth(1000)
       .setScrollFactor(0);
 
-    // Fade hint after a few seconds
-    this.time.delayedCall(5000, () => {
+    this.time.delayedCall(6000, () => {
       if (this.touchHint?.active) {
         this.tweens.add({
           targets: this.touchHint,
-          alpha: 0.35,
+          alpha: 0.3,
           duration: 600,
         });
       }

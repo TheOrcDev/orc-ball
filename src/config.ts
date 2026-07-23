@@ -6,6 +6,8 @@ export const HEIGHT = 600;
 export const PADDLE_WIDTH = 120;
 export const PADDLE_HEIGHT = 20;
 export const PADDLE_Y = HEIGHT - 40;
+/** On touch UI, raise paddle so fingers can drag in the free zone below. */
+export const PADDLE_Y_TOUCH = HEIGHT - 110;
 export const PADDLE_SPEED = 420;
 export const PADDLE_SCALE_SHRINK = 0.6;
 export const PADDLE_SCALE_NORMAL = 1;

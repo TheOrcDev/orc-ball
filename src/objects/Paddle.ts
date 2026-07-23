@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import {
   COLORS,
-  HEIGHT,
   PADDLE_HEIGHT,
   PADDLE_SCALE_NORMAL,
   PADDLE_SPEED,
@@ -13,6 +12,8 @@ import { clampPaddleX } from '../logic/touch';
 
 export class Paddle extends Phaser.Physics.Arcade.Sprite {
   sticky = false;
+  /** Locked vertical position (higher on touch so finger zone sits below). */
+  private lockedY: number;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
@@ -32,7 +33,9 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   private widthScale = PADDLE_SCALE_NORMAL;
 
   constructor(scene: Phaser.Scene, x?: number, y?: number) {
-    super(scene, x ?? WIDTH / 2, y ?? PADDLE_Y, 'paddle');
+    const startY = y ?? PADDLE_Y;
+    super(scene, x ?? WIDTH / 2, startY, 'paddle');
+    this.lockedY = startY;
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
@@ -280,7 +283,7 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.pointerVelX = body.velocity.x;
     }
 
-    this.y = PADDLE_Y;
+    this.y = this.lockedY;
     body.setVelocityY(0);
 
     if (this.glueLook) {
@@ -302,7 +305,7 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   }
 
   get paddleY(): number {
-    return HEIGHT - 40;
+    return this.lockedY;
   }
 
   /** Solid face height (excludes hanging drips on glue texture). */
