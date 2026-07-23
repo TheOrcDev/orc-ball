@@ -124,8 +124,7 @@ export class PowerUpManager {
       this.scheduleTimed('SHRINK', duration);
       this.emitEffects();
     } else if (type === 'STICKY') {
-      this.paddle.sticky = true;
-      this.paddle.setTint(COLORS.sticky);
+      this.paddle.setGlueLook(true);
       this.scheduleTimed('STICKY', duration);
       this.emitEffects();
     } else if (type === 'FIREBALL') {
@@ -169,14 +168,17 @@ export class PowerUpManager {
       if (!this.state.active.has('EXPAND') && !this.state.active.has('SHRINK')) {
         this.state.paddleScale = 1;
         this.paddle.resetWidth();
-        if (!this.state.sticky) this.paddle.clearTint();
-        else this.paddle.setTint(COLORS.sticky);
+        if (this.state.sticky) {
+          this.paddle.setGlueLook(true);
+        } else {
+          this.paddle.clearTint();
+        }
       }
       this.emitEffects();
     }
     if (effect === 'STICKY') {
       this.state.sticky = false;
-      this.paddle.sticky = false;
+      this.paddle.setGlueLook(false);
       if (this.state.active.has('EXPAND')) this.paddle.setTint(COLORS.expand);
       else if (this.state.active.has('SHRINK')) this.paddle.setTint(COLORS.shrink);
       else this.paddle.clearTint();
@@ -207,7 +209,7 @@ export class PowerUpManager {
     }
     this.state = resetPowerUpState(this.state, true);
     this.paddle.resetWidth();
-    this.paddle.sticky = false;
+    this.paddle.setGlueLook(false);
     this.paddle.clearTint();
     this.applyFireballToAll(false);
     this.emitEffects();

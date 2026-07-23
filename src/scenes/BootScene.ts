@@ -78,6 +78,52 @@ export class BootScene extends Phaser.Scene {
     g.fillRect(10, h / 2 - 1, w - 20, 2);
     g.generateTexture('paddle', w, h);
     g.destroy();
+
+    // Sticky / GLUE paddle — slime coating + baked drips
+    this.bakeGluePaddle();
+  }
+
+  /** Player paddle when GLUE is active: viscous green slime look. */
+  private bakeGluePaddle(): void {
+    const w = PADDLE_WIDTH;
+    const bodyH = PADDLE_HEIGHT;
+    // Extra height for hanging drips under the paddle
+    const dripH = 18;
+    const h = bodyH + dripH;
+    const g = this.make.graphics({ x: 0, y: 0 });
+
+    // Slime body
+    g.fillStyle(0x7cb342, 1);
+    g.fillRoundedRect(0, 0, w, bodyH, 7);
+    // Glossy top
+    g.fillStyle(0xc6ff00, 0.55);
+    g.fillRoundedRect(2, 1, w - 4, bodyH * 0.45, 5);
+    // Sticky sheen stripe
+    g.fillStyle(0xeeff41, 0.7);
+    g.fillRect(8, bodyH / 2 - 2, w - 16, 3);
+    // Darker goo underside
+    g.fillStyle(0x33691e, 0.75);
+    g.fillRect(2, bodyH - 6, w - 4, 5);
+    // Side blobs
+    g.fillStyle(0xaeea00, 0.6);
+    g.fillCircle(4, bodyH / 2, 5);
+    g.fillCircle(w - 4, bodyH / 2, 5);
+
+    // Hanging drips along bottom (part of texture, origin still mid-body)
+    const dripXs = [14, 32, 50, 70, 88, 106];
+    for (let i = 0; i < dripXs.length; i++) {
+      const dx = dripXs[i]!;
+      const len = 8 + (i % 3) * 4;
+      g.fillStyle(0x9ccc65, 0.95);
+      g.fillTriangle(dx - 4, bodyH - 2, dx + 4, bodyH - 2, dx, bodyH + len);
+      g.fillStyle(0xc6ff00, 0.8);
+      g.fillCircle(dx, bodyH + len, 3.5);
+      g.fillStyle(0xffffff, 0.2);
+      g.fillCircle(dx - 1, bodyH + len * 0.5, 1.5);
+    }
+
+    g.generateTexture('paddle-glue', w, h);
+    g.destroy();
   }
 
   /** Sphere with specular highlight. */

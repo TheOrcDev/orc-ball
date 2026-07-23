@@ -265,7 +265,7 @@ export class GameScene extends Phaser.Scene {
 
   private serveBall(): void {
     this.balls.clear(true, true);
-    const top = this.paddle.y - this.paddle.displayHeight / 2;
+    const top = this.paddle.faceTop;
     const ball = this.createBall(this.paddle.x, top - BALL_RADIUS - 1);
     ball.speed = this.ballSpeed;
     ball.stickTo(this.paddle.x, top, 0, this.time.now);
@@ -520,7 +520,7 @@ export class GameScene extends Phaser.Scene {
 
     const body = ball.body as Phaser.Physics.Arcade.Body | null;
     const paddleBody = paddle.body as Phaser.Physics.Arcade.Body;
-    const paddleTop = paddle.y - paddle.displayHeight / 2;
+    const paddleTop = paddle.faceTop;
 
     // GLUE (sticky): ball sticks until SPACE — no auto-bounce
     if (this.powerUpManager.isSticky || paddle.sticky) {
@@ -791,10 +791,7 @@ export class GameScene extends Phaser.Scene {
     );
     const glueActive = this.powerUpManager.isSticky;
     for (const ball of stuck) {
-      ball.followPaddle(
-        this.paddle.x,
-        this.paddle.y - this.paddle.displayHeight / 2,
-      );
+      ball.followPaddle(this.paddle.x, this.paddle.faceTop);
       if (
         !glueActive &&
         time - ball.stuckSince >= STUCK_AUTO_LAUNCH_MS

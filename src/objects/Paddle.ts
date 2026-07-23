@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import {
+  COLORS,
   HEIGHT,
+  PADDLE_HEIGHT,
   PADDLE_SCALE_NORMAL,
   PADDLE_SPEED,
   PADDLE_Y,
@@ -19,6 +21,11 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   private pointerTargetX: number | null = null;
   /** Smoothed horizontal velocity for ball english when pointer-steering. */
   private pointerVelX = 0;
+  /** Animated goo overlay while GLUE is active. */
+  private glueOverlay?: Phaser.GameObjects.Graphics;
+  private glueDripPhase = 0;
+  private glueLook = false;
+  private widthScale = PADDLE_SCALE_NORMAL;
 
   constructor(scene: Phaser.Scene, x?: number, y?: number) {
     super(scene, x ?? WIDTH / 2, y ?? PADDLE_Y, 'paddle');
@@ -42,20 +49,116 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   /**
    * Phaser Arcade Body.setSize stores unscaled source size then multiplies by
    * scaleX/Y — pass frame width/height (this.width/height), NOT displayWidth.
+   * For glue texture (taller frame with drips), body height stays paddle face only.
    */
   syncBodySize(): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
-    const { width, height } = paddleBodySetSizeArgs(this.width, this.height);
-    body.setSize(width, height, true);
+    if (this.glueLook) {
+      // Texture is taller (body + drips); physics uses face size only
+      const { width } = paddleBodySetSizeArgs(this.width, PADDLE_HEIGHT);
+      body.setSize(width, PADDLE_HEIGHT, false);
+      // Center body on the paddle face (upper part of tall texture)
+      const frameH = this.height;
+      body.setOffset(0, (frameH - PADDLE_HEIGHT) / 2 - 2);
+    } else {
+      const { width, height } = paddleBodySetSizeArgs(this.width, this.height);
+      body.setSize(width, height, true);
+    }
   }
 
   setWidthScale(scale: number): void {
+    this.widthScale = scale;
     this.setScale(scale);
     this.syncBodySize();
   }
 
   resetWidth(): void {
     this.setWidthScale(PADDLE_SCALE_NORMAL);
+  }
+
+  /**
+   * GLUE power: swap to slime paddle texture + live drip overlay.
+   * This is the player object looking "glued", not the arena.
+   */
+  setGlueLook(active: boolean): void {
+    this.glueLook = active;
+    this.sticky = active;
+    if (active) {
+      this.setTexture('paddle-glue');
+      this.clearTint();
+      // Origin: center of the solid face (not including drip hang)
+      // Texture height = PADDLE_HEIGHT + 18; face center is slightly above mid
+      this.setOrigin(0.5, PADDLE_HEIGHT / 2 / (PADDLE_HEIGHT + 18));
+      this.setScale(this.widthScale);
+      this.syncBodySize();
+      this.ensureGlueOverlay();
+    } else {
+      this.setTexture('paddle');
+      this.setOrigin(0.5, 0.5);
+      this.setScale(this.widthScale);
+      this.syncBodySize();
+      this.destroyGlueOverlay();
+    }
+  }
+
+  private ensureGlueOverlay(): void {
+    if (this.glueOverlay) return;
+    this.glueOverlay = this.scene.add.graphics().setDepth(this.depth + 1);
+  }
+
+  private destroyGlueOverlay(): void {
+    this.glueOverlay?.destroy();
+    this.glueOverlay = undefined;
+  }
+
+  private redrawGlueOverlay(): void {
+    const g = this.glueOverlay;
+    if (!g || !this.glueLook) return;
+    g.clear();
+
+    const halfW = this.displayWidth / 2;
+    const top = this.y - this.displayHeight * this.originY;
+    const faceBottom = top + PADDLE_HEIGHT * this.scaleY;
+    const left = this.x - halfW;
+
+    // Animated drips hanging under the paddle face
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const x = left + 10 * this.scaleX + t * (this.displayWidth - 20 * this.scaleX);
+      const wobble = Math.sin(this.glueDripPhase * 2.2 + i * 1.1) * 3;
+      const len = (10 + (i % 3) * 5 + wobble) * this.scaleY;
+      // Strand
+      g.fillStyle(0xc6ff00, 0.75);
+      g.fillTriangle(x - 3.5 * this.scaleX, faceBottom - 1, x + 3.5 * this.scaleX, faceBottom - 1, x, faceBottom + len);
+      // Droplet
+      g.fillStyle(0xeeff41, 0.9);
+      g.fillCircle(x, faceBottom + len, 3.2 * this.scaleX);
+      g.fillStyle(0xffffff, 0.25);
+      g.fillCircle(x - 1, faceBottom + len * 0.55, 1.2 * this.scaleX);
+    }
+
+    // Surface goo blobs on top of paddle
+    g.fillStyle(0xaeea00, 0.45);
+    for (let i = 0; i < 4; i++) {
+      const bx =
+        left +
+        16 * this.scaleX +
+        i * ((this.displayWidth - 32 * this.scaleX) / 3) +
+        Math.sin(this.glueDripPhase + i) * 2;
+      const by = top + 4 * this.scaleY + Math.cos(this.glueDripPhase * 1.5 + i) * 1.5;
+      g.fillCircle(bx, by, (3.5 + (i % 2)) * this.scaleX);
+    }
+
+    // Soft outer glow (sticky aura)
+    g.lineStyle(3, COLORS.sticky, 0.35);
+    g.strokeRoundedRect(
+      left - 2,
+      top - 2,
+      this.displayWidth + 4,
+      PADDLE_HEIGHT * this.scaleY + 4,
+      8,
+    );
   }
 
   /** Follow finger/cursor X, or null to return to keyboard control. */
@@ -83,7 +186,6 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
     if (this.pointerTargetX !== null) {
       const target = clampPaddleX(this.pointerTargetX, half, WIDTH);
       const prevX = this.x;
-      // Snappy follow — responsive on touch
       const blend = 1 - Math.exp(-18 * dt);
       this.x = prevX + (target - prevX) * blend;
       this.pointerVelX = (this.x - prevX) / dt;
@@ -96,7 +198,6 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.pointerVelX = body.velocity.x;
     }
 
-    // Extra clamp so half-width never leaves the world
     if (this.x < half) {
       this.x = half;
       body.setVelocityX(Math.max(0, body.velocity.x));
@@ -107,9 +208,13 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.pointerVelX = body.velocity.x;
     }
 
-    // Keep Y locked
     this.y = PADDLE_Y;
     body.setVelocityY(0);
+
+    if (this.glueLook) {
+      this.glueDripPhase += dt * 3;
+      this.redrawGlueOverlay();
+    }
   }
 
   get boundsLeft(): number {
@@ -122,5 +227,20 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
 
   get paddleY(): number {
     return HEIGHT - 40;
+  }
+
+  /** Solid face height (excludes hanging drips on glue texture). */
+  get faceHeight(): number {
+    return PADDLE_HEIGHT * this.scaleY;
+  }
+
+  /** Top of the solid paddle face — use for ball stick / hits. */
+  get faceTop(): number {
+    return this.y - this.faceHeight / 2;
+  }
+
+  destroy(fromScene?: boolean): void {
+    this.destroyGlueOverlay();
+    super.destroy(fromScene);
   }
 }
