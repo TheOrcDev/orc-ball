@@ -218,7 +218,8 @@ export const LEVELS: LevelDef[] = [
     dropChance: 0.34,
     dropTable: DROPS_HARD,
     rows: [
-      'XXXXXXXXXX',
+      // Top passage only — ball must go around the sides to enter (harder)
+      'XXXX..XXXX',
       'X22222222X',
       'X2......2X',
       'X2.3333.2X',
@@ -226,8 +227,7 @@ export const LEVELS: LevelDef[] = [
       'X2.3333.2X',
       'X2......2X',
       'X22222222X',
-      // Two-cell bottom passage so the ball can enter without fireball
-      'XXXX..XXXX',
+      'XXXXXXXXXX',
     ],
   },
   {
