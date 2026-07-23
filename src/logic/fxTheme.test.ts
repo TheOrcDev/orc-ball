@@ -50,6 +50,9 @@ describe('getFxTheme', () => {
     expect(glue.primary).not.toBe(bullet.primary);
     expect(bullet.label).toBe('BULLET');
     expect(glue.label).toBe('GLUE');
+    expect(glue.style).toBe('glue');
+    expect(def.style).toBe('electric');
+    expect(bullet.style).toBe('electric');
   });
 
   it('bullet theme is more intense than default', () => {

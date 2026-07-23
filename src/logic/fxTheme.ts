@@ -20,9 +20,13 @@ export interface ActiveFxFlags {
   multiPulse?: boolean;
 }
 
+export type FxStyle = 'electric' | 'glue';
+
 export interface FxTheme {
   id: FxThemeId;
-  /** Primary arc / border color */
+  /** Rendering style: lightning vs sticky goo */
+  style: FxStyle;
+  /** Primary arc / border / goo color */
   primary: number;
   secondary: number;
   glow: number;
@@ -39,6 +43,7 @@ export interface FxTheme {
 const THEMES: Record<FxThemeId, FxTheme> = {
   default: {
     id: 'default',
+    style: 'electric',
     primary: 0x4fc3f7,
     secondary: 0x81d4fa,
     glow: 0x0277bd,
@@ -51,22 +56,25 @@ const THEMES: Record<FxThemeId, FxTheme> = {
     wallIntensity: 0.55,
     label: 'ARC',
   },
+  /** Viscous slime look — amber-teal goo, not lightning. */
   glue: {
     id: 'glue',
-    primary: 0x26a69a,
-    secondary: 0x80cbc4,
-    glow: 0x00695c,
-    bgTop: 0x0a1f1c,
-    bgBottom: 0x041210,
-    sparkTint: [0x26a69a, 0xb2dfdb, 0x00897b],
-    boltJitter: 8,
-    boltFrequencyMs: 160,
-    particleFrequency: 100,
-    wallIntensity: 0.65,
+    style: 'glue',
+    primary: 0xc6ff00,
+    secondary: 0x76ff03,
+    glow: 0x33691e,
+    bgTop: 0x1a2e12,
+    bgBottom: 0x0a1408,
+    sparkTint: [0xc6ff00, 0xaeea00, 0x64dd17, 0xeeff41],
+    boltJitter: 4,
+    boltFrequencyMs: 200,
+    particleFrequency: 55,
+    wallIntensity: 0.9,
     label: 'GLUE',
   },
   bullet: {
     id: 'bullet',
+    style: 'electric',
     primary: 0xff6d00,
     secondary: 0xffab40,
     glow: 0xbf360c,
@@ -81,6 +89,7 @@ const THEMES: Record<FxThemeId, FxTheme> = {
   },
   expand: {
     id: 'expand',
+    style: 'electric',
     primary: 0x42a5f5,
     secondary: 0x90caf9,
     glow: 0x1565c0,
@@ -95,6 +104,7 @@ const THEMES: Record<FxThemeId, FxTheme> = {
   },
   shrink: {
     id: 'shrink',
+    style: 'electric',
     primary: 0xe53935,
     secondary: 0xef9a9a,
     glow: 0xb71c1c,
@@ -109,6 +119,7 @@ const THEMES: Record<FxThemeId, FxTheme> = {
   },
   multi: {
     id: 'multi',
+    style: 'electric',
     primary: 0xab47bc,
     secondary: 0xce93d8,
     glow: 0x6a1b9a,
