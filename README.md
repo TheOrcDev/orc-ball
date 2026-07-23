@@ -1,11 +1,14 @@
 # ORC-BALL
 
+**Play:** [orcball.com](https://orcball.com)
+
 Retro **Breakout / DX-Ball** style arcade game in the browser — Phaser 3, TypeScript, Vite.
 
-Smash brick walls with a metallic ball, collect power-ups (glue, laser, multi-ball, fireball, and more), and clear **20 levels**. Progress and high scores save in your browser.
+Smash brick walls, collect power-ups (glue, laser, multi-ball, fireball, and more), and clear **20 levels**. Progress and high scores save in your browser.
 
 ## Play
 
+- Live: https://orcball.com
 - Local: `npm install && npm run dev`
 - Production: `npm run build && npm run preview`
 
