@@ -19,6 +19,7 @@ from typing import Iterable, Sequence
 
 
 SAMPLE_RATE = 44_100
+MASTER_PEAK = 0.82
 TAU = math.tau
 NOTE_RE = re.compile(r"^([A-G])([#b]?)(-?\d+)$")
 PITCH_CLASSES = {
@@ -359,7 +360,7 @@ class Song:
                 abs(math.tanh(left_sample * drive)),
                 abs(math.tanh(right_sample * drive)),
             )
-        gain = 0.88 / max(processed_peak, 1e-9)
+        gain = MASTER_PEAK / max(processed_peak, 1e-9)
         quantization_steps = 4095.0
         first_left = 0.0
         first_right = 0.0
@@ -419,7 +420,7 @@ class Song:
             "sample_rate": SAMPLE_RATE,
             "frames": self.frames,
             "duration_seconds": round(self.frames / SAMPLE_RATE, 6),
-            "peak_dbfs": round(20.0 * math.log10(0.88), 2),
+            "peak_dbfs": round(20.0 * math.log10(MASTER_PEAK), 2),
             "rms_dbfs": round(rms_dbfs, 2),
             "seam_jump_dbfs": round(seam_jump_dbfs, 2),
         }

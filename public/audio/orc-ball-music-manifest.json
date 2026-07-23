@@ -11,9 +11,9 @@
       "sample_rate": 44100,
       "frames": 882000,
       "duration_seconds": 20.0,
-      "peak_dbfs": -1.11,
-      "rms_dbfs": -13.32,
-      "seam_jump_dbfs": -25.97
+      "peak_dbfs": -1.72,
+      "rms_dbfs": -13.94,
+      "seam_jump_dbfs": -120.0
     },
     {
       "title": "Coin-Op Chase",
@@ -26,9 +26,9 @@
       "sample_rate": 44100,
       "frames": 661500,
       "duration_seconds": 15.0,
-      "peak_dbfs": -1.11,
-      "rms_dbfs": -15.9,
-      "seam_jump_dbfs": -30.24
+      "peak_dbfs": -1.72,
+      "rms_dbfs": -16.53,
+      "seam_jump_dbfs": -120.0
     },
     {
       "title": "One Heart Left",
@@ -41,9 +41,9 @@
       "sample_rate": 44100,
       "frames": 588000,
       "duration_seconds": 13.333333,
-      "peak_dbfs": -1.11,
-      "rms_dbfs": -15.26,
-      "seam_jump_dbfs": -21.07
+      "peak_dbfs": -1.72,
+      "rms_dbfs": -15.89,
+      "seam_jump_dbfs": -120.0
     },
     {
       "title": "Gem Secured",
@@ -56,9 +56,9 @@
       "sample_rate": 44100,
       "frames": 165375,
       "duration_seconds": 3.75,
-      "peak_dbfs": -1.11,
-      "rms_dbfs": -14.97,
-      "seam_jump_dbfs": -33.76
+      "peak_dbfs": -1.72,
+      "rms_dbfs": -15.59,
+      "seam_jump_dbfs": -120.0
     }
   ]
 }
