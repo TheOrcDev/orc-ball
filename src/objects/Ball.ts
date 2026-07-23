@@ -23,7 +23,7 @@ export class Ball extends Phaser.Physics.Arcade.Image {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    // Texture is baked 2× for face detail — display at gameplay size
+    // Texture baked 3× for metallic gradients — display at gameplay size
     this.setDisplaySize(BALL_RADIUS * 2, BALL_RADIUS * 2);
     this.setOrigin(0.5, 0.5);
 
