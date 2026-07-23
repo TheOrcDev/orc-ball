@@ -145,12 +145,11 @@ export class BootScene extends Phaser.Scene {
 
   /**
    * Shiny metallic 3D sphere — chrome-like shading, strong specular.
-   * Baked 3× for smooth gradients, displayed at BALL_DIAMETER.
+   * Baked at exact gameplay size so physics radius matches the sprite (no scale mismatch).
    */
   private bakeBall(): void {
-    const scale = 3;
-    const r = BALL_RADIUS * scale;
-    const d = r * 2;
+    const r = BALL_RADIUS;
+    const d = BALL_RADIUS * 2;
     const g = this.make.graphics({ x: 0, y: 0 });
     const cx = r;
     const cy = r;
@@ -166,37 +165,34 @@ export class BootScene extends Phaser.Scene {
       { rad: 0.68, color: 0x90a4ae, alpha: 0.55 },
       { rad: 0.52, color: 0xb0bec5, alpha: 0.5 },
       { rad: 0.38, color: 0xcfd8dc, alpha: 0.55 },
-      { rad: 0.24, color: 0xeceff1, alpha: 0.6 },
+      { rad: 0.24, color: 0xeceff1, alpha: 0.65 },
     ];
     for (const b of bands) {
       g.fillStyle(b.color, b.alpha);
-      g.fillCircle(cx - r * 0.12, cy - r * 0.14, r * b.rad);
+      g.fillCircle(cx - r * 0.15, cy - r * 0.18, r * b.rad);
     }
 
     // Lower occluded hemisphere (depth)
-    g.fillStyle(0x263238, 0.4);
-    g.fillCircle(cx + r * 0.15, cy + r * 0.28, r * 0.7);
+    g.fillStyle(0x263238, 0.45);
+    g.fillCircle(cx + r * 0.18, cy + r * 0.3, r * 0.65);
 
     // Cool blue metal reflection streak
-    g.fillStyle(0x81d4fa, 0.28);
-    g.fillEllipse(cx - r * 0.15, cy - r * 0.05, r * 0.9, r * 0.45);
+    g.fillStyle(0x81d4fa, 0.3);
+    g.fillEllipse(cx - r * 0.1, cy - r * 0.05, r * 0.85, r * 0.4);
 
     // Primary specular highlight (chrome hot spot)
     g.fillStyle(0xffffff, 0.95);
-    g.fillCircle(cx - r * 0.32, cy - r * 0.35, r * 0.22);
-    g.fillStyle(0xffffff, 0.55);
-    g.fillCircle(cx - r * 0.28, cy - r * 0.32, r * 0.32);
+    g.fillCircle(cx - r * 0.3, cy - r * 0.32, r * 0.28);
+    g.fillStyle(0xffffff, 0.5);
+    g.fillCircle(cx - r * 0.25, cy - r * 0.28, r * 0.38);
 
     // Secondary rim light
-    g.fillStyle(0xe1f5fe, 0.35);
-    g.fillCircle(cx + r * 0.35, cy + r * 0.2, r * 0.18);
+    g.fillStyle(0xe1f5fe, 0.4);
+    g.fillCircle(cx + r * 0.32, cy + r * 0.22, r * 0.16);
 
     // Thin dark rim for sphere edge
-    g.lineStyle(Math.max(1, scale * 0.6), 0x102027, 0.9);
+    g.lineStyle(1, 0x102027, 0.95);
     g.strokeCircle(cx, cy, r - 0.5);
-    // Inner bright rim (metal edge catch)
-    g.lineStyle(Math.max(1, scale * 0.4), 0xb0bec5, 0.35);
-    g.strokeCircle(cx, cy, r * 0.92);
 
     g.generateTexture('ball', d, d);
     g.destroy();
