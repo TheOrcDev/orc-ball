@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFERRED_TRACK_ASSETS,
   GAMEPLAY_TRACKS,
+  MENU_TRACK_ASSETS,
   MENU_TRACKS,
   Music,
   MUSIC_COIN_OP,
@@ -61,6 +63,16 @@ describe('MUSIC_TRACK_ASSETS', () => {
         MUSIC_DANGER,
         MUSIC_LEVEL_CLEAR,
       ]),
+    );
+  });
+
+  it('splits menu boot assets from deferred gameplay assets', () => {
+    expect(MENU_TRACK_ASSETS.map(([k]) => k)).toEqual([...MENU_TRACKS]);
+    expect(DEFERRED_TRACK_ASSETS.map(([k]) => k)).toEqual(
+      expect.arrayContaining([...GAMEPLAY_TRACKS, MUSIC_DANGER, MUSIC_LEVEL_CLEAR]),
+    );
+    expect(DEFERRED_TRACK_ASSETS).toHaveLength(
+      MUSIC_TRACK_ASSETS.length - MENU_TRACK_ASSETS.length,
     );
   });
 });

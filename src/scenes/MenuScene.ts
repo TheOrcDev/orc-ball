@@ -7,11 +7,12 @@ import {
   loadProgress,
   type RunProgress,
 } from '../systems/ProgressSave';
-import { Music } from '../systems/Music';
+import { DEFERRED_TRACK_ASSETS, Music } from '../systems/Music';
 import { Sfx } from '../systems/Sfx';
 
 export class MenuScene extends Phaser.Scene {
   private sfx!: Sfx;
+  private deferredAudioReady = false;
 
   constructor() {
     super('MenuScene');
@@ -21,14 +22,24 @@ export class MenuScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
-    // Rotate through the four title-screen loops on each menu visit.
+    // Start title music immediately (menu tracks are preloaded in Boot).
     Music.playMenu(this);
+    // Kick browser autoplay unlock as soon as anything is pressed.
+    Music.armAutoplay(this);
+    this.loadDeferredAudio();
 
     // Full-screen retro landing art
     if (this.textures.exists('menu-bg')) {
       const bg = this.add.image(WIDTH / 2, HEIGHT / 2, 'menu-bg');
       const scale = Math.max(WIDTH / bg.width, HEIGHT / bg.height);
       bg.setScale(scale).setDepth(0);
+      // Any click on the art also unlocks audio (not only the buttons).
+      bg.setInteractive();
+      bg.on('pointerdown', () => {
+        this.sfx.tryUnlock();
+        Music.tryResumeContext(this);
+        Music.ensureAudible(this);
+      });
     }
 
     const progress = loadProgress();
@@ -79,12 +90,54 @@ export class MenuScene extends Phaser.Scene {
 
     this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P,ESC');
 
+    // Any key / pointer on the menu unlocks WebAudio and starts music if blocked.
+    this.input.on('pointerdown', () => {
+      this.sfx.tryUnlock();
+      Music.tryResumeContext(this);
+      Music.ensureAudible(this);
+    });
+    this.input.keyboard?.on('keydown', () => {
+      this.sfx.tryUnlock();
+      Music.tryResumeContext(this);
+      Music.ensureAudible(this);
+    });
+
     const space = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
     );
     space?.once('down', () => {
       if (hasContinue && progress.run) this.startFromRun(progress.run);
       else this.startNewGame();
+    });
+  }
+
+  /** Gameplay / cue tracks after the menu is already playing. */
+  private loadDeferredAudio(): void {
+    let queued = 0;
+    for (const [key, path] of DEFERRED_TRACK_ASSETS) {
+      if (!this.cache.audio.exists(key)) {
+        this.load.audio(key, path);
+        queued += 1;
+      }
+    }
+    if (queued === 0) {
+      this.deferredAudioReady = true;
+      return;
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.deferredAudioReady = true;
+    });
+    this.load.start();
+  }
+
+  private whenAudioReady(then: () => void): void {
+    if (this.deferredAudioReady) {
+      then();
+      return;
+    }
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.deferredAudioReady = true;
+      then();
     });
   }
 
@@ -133,24 +186,30 @@ export class MenuScene extends Phaser.Scene {
 
   private startNewGame(): void {
     this.sfx.tryUnlock();
-    Music.stop(this);
-    clearRunKeepUnlocks();
-    const progress = loadProgress();
-    this.registry.set('score', 0);
-    this.registry.set('lives', START_LIVES);
-    this.registry.set('level', 0);
-    this.registry.set('highScore', progress.highScore);
-    this.scene.start('GameScene', { level: 0 });
+    Music.tryResumeContext(this);
+    this.whenAudioReady(() => {
+      Music.stop(this);
+      clearRunKeepUnlocks();
+      const progress = loadProgress();
+      this.registry.set('score', 0);
+      this.registry.set('lives', START_LIVES);
+      this.registry.set('level', 0);
+      this.registry.set('highScore', progress.highScore);
+      this.scene.start('GameScene', { level: 0 });
+    });
   }
 
   private startFromRun(run: RunProgress): void {
     this.sfx.tryUnlock();
-    Music.stop(this);
-    const progress = loadProgress();
-    this.registry.set('score', run.score);
-    this.registry.set('lives', run.lives);
-    this.registry.set('level', run.level);
-    this.registry.set('highScore', progress.highScore);
-    this.scene.start('GameScene', { level: run.level });
+    Music.tryResumeContext(this);
+    this.whenAudioReady(() => {
+      Music.stop(this);
+      const progress = loadProgress();
+      this.registry.set('score', run.score);
+      this.registry.set('lives', run.lives);
+      this.registry.set('level', run.level);
+      this.registry.set('highScore', progress.highScore);
+      this.scene.start('GameScene', { level: run.level });
+    });
   }
 }

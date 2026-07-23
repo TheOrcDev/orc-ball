@@ -5,6 +5,9 @@ import {
   MUSIC_VOLUME_KEY,
 } from '../config';
 
+/** Phaser.Sound.Events.UNLOCKED — string literal so tests need no Phaser DOM. */
+const SOUND_UNLOCKED = 'unlocked';
+
 /** Phaser audio keys (loaded in BootScene from public/audio/). */
 export const MUSIC_MENU = 'music-menu';
 export const MUSIC_MENU_EMBERGLASS = 'music-menu-emberglass';
@@ -66,6 +69,18 @@ export const MUSIC_TRACK_ASSETS = [
   [MUSIC_LEVEL_CLEAR, 'audio/orc-ball-level-clear-gem-secured.mp3'],
 ] as const;
 
+const MENU_KEY_SET = new Set<string>(MENU_TRACKS);
+
+/** Title-screen tracks only — boot these first so menu music can start ASAP. */
+export const MENU_TRACK_ASSETS = MUSIC_TRACK_ASSETS.filter(([key]) =>
+  MENU_KEY_SET.has(key),
+);
+
+/** Gameplay / cue tracks loaded in the background after the menu is up. */
+export const DEFERRED_TRACK_ASSETS = MUSIC_TRACK_ASSETS.filter(
+  ([key]) => !MENU_KEY_SET.has(key),
+);
+
 const ALL_KEYS = MUSIC_TRACK_ASSETS.map(([key]) => key);
 
 type SoundWithVol = Phaser.Sound.BaseSound & {
@@ -85,6 +100,8 @@ export class Music {
   private static currentLevelIndex: number | null = null;
   private static currentMenuKey: string | null = null;
   private static menuVisitIndex = 0;
+  private static unlockBound = false;
+  private static pendingLoop = true;
 
   static get isEnabled(): boolean {
     return Music.enabled;
@@ -179,6 +196,79 @@ export class Music {
     return (scene.sound.get(key) as SoundWithVol | null) ?? null;
   }
 
+  private static getAudioContext(scene: Phaser.Scene): AudioContext | null {
+    const sound = scene.sound as Phaser.Sound.WebAudioSoundManager & {
+      context?: AudioContext;
+    };
+    if (sound && 'context' in sound && sound.context) {
+      return sound.context;
+    }
+    return null;
+  }
+
+  /** Resume WebAudio if the browser suspended it (autoplay policy). */
+  static tryResumeContext(scene: Phaser.Scene): void {
+    const ctx = Music.getAudioContext(scene);
+    if (ctx && ctx.state === 'suspended') {
+      void ctx.resume().then(() => {
+        Music.ensureAudible(scene);
+      });
+    }
+  }
+
+  /**
+   * If the intended track exists but is silent (locked context / failed autoplay),
+   * start or resume it.
+   */
+  static ensureAudible(scene: Phaser.Scene): void {
+    if (!Music.enabled || Music.volPct <= 0) return;
+    const key = Music.currentKey;
+    if (!key || !scene.cache.audio.exists(key)) return;
+
+    const s = Music.getSound(scene, key);
+    if (s?.isPlaying) {
+      s.setVolume?.(Music.volume);
+      return;
+    }
+    if (s?.isPaused) {
+      s.setVolume?.(Music.volume);
+      s.resume();
+      return;
+    }
+
+    scene.sound.stopByKey(key);
+    scene.sound.play(key, {
+      loop: Music.pendingLoop,
+      volume: Music.volume,
+    });
+  }
+
+  /**
+   * Keep trying until the browser unlocks audio, then make sure menu/game BGM
+   * is actually audible. Safe to call multiple times.
+   */
+  static armAutoplay(scene: Phaser.Scene): void {
+    Music.tryResumeContext(scene);
+    Music.ensureAudible(scene);
+
+    if (!Music.unlockBound) {
+      Music.unlockBound = true;
+      scene.sound.once(SOUND_UNLOCKED, () => {
+        Music.unlockBound = false;
+        Music.tryResumeContext(scene);
+        Music.ensureAudible(scene);
+      });
+    }
+
+    // First user gesture on the page unlocks Chrome/Safari autoplay.
+    const kick = (): void => {
+      Music.tryResumeContext(scene);
+      Music.ensureAudible(scene);
+    };
+    scene.input.once('pointerdown', kick);
+    scene.input.keyboard?.once('keydown', kick);
+  }
+
   static stopAll(scene: Phaser.Scene): void {
     for (const key of ALL_KEYS) {
       scene.sound.stopByKey(key);
@@ -194,14 +284,18 @@ export class Music {
     // Clear any previous selection even while music is off. Otherwise advancing
     // a level while disabled can resume the stale paused track when re-enabled.
     Music.stopAll(scene);
+    Music.pendingLoop = loop;
     if (!Music.enabled || Music.volPct <= 0) return;
     if (!scene.cache.audio.exists(key)) return;
 
+    Music.tryResumeContext(scene);
     scene.sound.play(key, {
       loop,
       volume: Music.volume,
     });
     Music.currentKey = key;
+    // If autoplay is blocked, ensureAudible restarts once the context unlocks.
+    Music.ensureAudible(scene);
   }
 
   /** Title screen loop. */
@@ -211,6 +305,7 @@ export class Music {
     Music.currentLevelIndex = null;
     Music.currentMenuKey = key;
     Music.playKey(scene, key, true);
+    Music.armAutoplay(scene);
   }
 
   /**
@@ -293,11 +388,18 @@ export class Music {
       }
       return;
     }
+    Music.tryResumeContext(scene);
     if (Music.currentKey) {
       const s = Music.getSound(scene, Music.currentKey);
       if (s) {
         s.setVolume?.(Music.volume);
-        if (s.isPaused) s.resume();
+        if (s.isPaused) {
+          s.resume();
+          return;
+        }
+        if (s.isPlaying) return;
+        // Exists but silent (common after blocked autoplay) — restart.
+        Music.ensureAudible(scene);
         return;
       }
     }

@@ -11,7 +11,7 @@ import {
 } from '../config';
 import { ALL_POWER_UP_TYPES, type PowerUpType } from '../data/types';
 import { POWERUP_COLOR, POWERUP_LETTER } from '../objects/PowerUp';
-import { MUSIC_TRACK_ASSETS } from '../systems/Music';
+import { MENU_TRACK_ASSETS } from '../systems/Music';
 
 const POWERUP_TEX: Record<PowerUpType, string> = {
   EXPAND: 'powerup-expand',
@@ -31,8 +31,8 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     // Title / landing art from public/
     this.load.image('menu-bg', 'orc-ball-landing.jpg');
-    // Soundtracks (prefer mp3 for size; see public/audio/)
-    for (const [key, path] of MUSIC_TRACK_ASSETS) {
+    // Menu music only — start the title screen ASAP; gameplay tracks load later.
+    for (const [key, path] of MENU_TRACK_ASSETS) {
       this.load.audio(key, path);
     }
   }
