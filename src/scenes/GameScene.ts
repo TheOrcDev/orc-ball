@@ -615,9 +615,6 @@ export class GameScene extends Phaser.Scene {
       this.breakEmitter.explode(12, brick.x, brick.y);
       this.boardFx.crackleAt(brick.x, brick.y);
       this.cameras.main.shake(100, 0.004);
-      if (isFire || ball.isFireball) {
-        this.cameras.main.flash(80, 255, 120, 40, false);
-      }
 
       // Speed ramp
       this.ballSpeed = Math.min(MAX_BALL_SPEED, this.ballSpeed + BALL_SPEED_RAMP);
