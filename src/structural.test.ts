@@ -52,8 +52,11 @@ describe('structural audit of shipped source', () => {
     expect(src).toMatch(/LEFT|createCursorKeys/);
     expect(src).toMatch(/KeyCodes\.A/);
     expect(src).toMatch(/KeyCodes\.D/);
-    expect(src).toMatch(/addCapture\(['"]SPACE,LEFT,RIGHT,A,D(?:,P)?['"]\)/);
+    expect(src).toMatch(
+      /addCapture\(['"]SPACE,LEFT,RIGHT,A,D(?:,P)?(?:,ESC)?['"]\)/,
+    );
     expect(src).toMatch(/KeyCodes\.P|pauseKey|togglePause/);
+    expect(src).toMatch(/KeyCodes\.ESC|escKey|showPauseMenu|startNewGame/);
   });
 
   it('has open-bottom bounds collision', () => {

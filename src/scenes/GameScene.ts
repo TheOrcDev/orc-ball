@@ -64,15 +64,17 @@ export class GameScene extends Phaser.Scene {
   private fireTrailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private spaceKey?: Phaser.Input.Keyboard.Key;
   private pauseKey?: Phaser.Input.Keyboard.Key;
+  private escKey?: Phaser.Input.Keyboard.Key;
   private levelIndex = 0;
   private destructibleRemaining = 0;
   private ballSpeed = DEFAULT_BALL_SPEED;
   private pausedForOverlay = false;
   private awaitingAdvance = false;
   private gameOverFlag = false;
-  /** Player toggle pause (P key) — separate from level/game-over overlays. */
+  /** ESC / P pause menu — separate from level/game-over overlays. */
   private isPaused = false;
   private pauseOverlay?: Phaser.GameObjects.Container;
+  private soundMenuLabel?: Phaser.GameObjects.Text;
   /** Touch / small-screen chrome (LAUNCH button + hints). */
   private touchUi = false;
   private launchBtn?: Phaser.GameObjects.Container;
@@ -103,12 +105,15 @@ export class GameScene extends Phaser.Scene {
     // Open bottom: left, right, top closed; bottom open
     this.physics.world.setBoundsCollision(true, true, true, false);
 
-    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P');
+    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P,ESC');
     this.spaceKey = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
     );
     this.pauseKey = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.P,
+    );
+    this.escKey = this.input.keyboard?.addKey(
+      Phaser.Input.Keyboard.KeyCodes.ESC,
     );
 
     // Ensure registry defaults
@@ -453,7 +458,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
     this.time.paused = true;
     this.paddle.setPointerTargetX(null);
-    this.showPauseOverlay();
+    this.showPauseMenu();
   }
 
   private resumeGame(): void {
@@ -461,37 +466,151 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = false;
     this.physics.world.resume();
     this.time.paused = false;
-    this.clearPauseOverlay();
+    this.clearPauseMenu();
   }
 
-  private showPauseOverlay(): void {
-    this.clearPauseOverlay();
+  /** Full pause menu: resume, new game, sound, main menu. */
+  private showPauseMenu(): void {
+    this.clearPauseMenu();
     const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(2000);
-    const bg = this.add
-      .rectangle(0, 0, WIDTH * 0.55, 140, 0x000000, 0.78)
+
+    const dim = this.add
+      .rectangle(0, 0, WIDTH + 4, HEIGHT + 4, 0x000000, 0.55)
+      .setInteractive(); // block clicks through to game
+
+    const panel = this.add
+      .rectangle(0, 0, 320, 300, 0x0a0a14, 0.94)
       .setStrokeStyle(2, COLORS.title);
+
     const title = this.add
-      .text(0, -28, 'PAUSED', {
+      .text(0, -118, 'PAUSED', {
         fontFamily: 'monospace',
-        fontSize: '36px',
+        fontSize: '32px',
         fontStyle: 'bold',
         color: '#4fc3f7',
       })
       .setOrigin(0.5);
-    const sub = this.add
-      .text(0, 28, 'Press P to resume', {
+
+    const hint = this.add
+      .text(0, 128, 'ESC / P to resume', {
         fontFamily: 'monospace',
-        fontSize: '16px',
-        color: '#ffffff',
+        fontSize: '12px',
+        color: '#78909c',
       })
       .setOrigin(0.5);
-    container.add([bg, title, sub]);
+
+    container.add([dim, panel, title, hint]);
+
+    const soundText = () =>
+      Sfx.isMuted ? 'Sound: OFF' : 'Sound: ON';
+
+    const items: { label: string; onClick: () => void; y: number }[] = [
+      {
+        label: 'Resume',
+        y: -60,
+        onClick: () => this.resumeGame(),
+      },
+      {
+        label: 'New Game',
+        y: -10,
+        onClick: () => this.startNewGame(),
+      },
+      {
+        label: soundText(),
+        y: 40,
+        onClick: () => {
+          Sfx.toggleMuted();
+          if (this.soundMenuLabel) {
+            this.soundMenuLabel.setText(
+              Sfx.isMuted ? 'Sound: OFF' : 'Sound: ON',
+            );
+          }
+          if (!Sfx.isMuted) this.sfx.tryUnlock();
+          this.sfx.paddleHit();
+        },
+      },
+      {
+        label: 'Main Menu',
+        y: 90,
+        onClick: () => this.goToMainMenu(),
+      },
+    ];
+
+    for (const item of items) {
+      const btn = this.makePauseButton(item.label, item.y, item.onClick);
+      container.add(btn.bg);
+      container.add(btn.text);
+      if (item.label.startsWith('Sound')) {
+        this.soundMenuLabel = btn.text;
+      }
+    }
+
     this.pauseOverlay = container;
   }
 
-  private clearPauseOverlay(): void {
+  private makePauseButton(
+    label: string,
+    y: number,
+    onClick: () => void,
+  ): { bg: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text } {
+    const bg = this.add
+      .rectangle(0, y, 240, 40, 0x1a2332, 1)
+      .setStrokeStyle(1, 0x4fc3f7, 0.5)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add
+      .text(0, y, label, {
+        fontFamily: 'monospace',
+        fontSize: '18px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+
+    bg.on('pointerover', () => {
+      bg.setFillStyle(0x263348, 1);
+      text.setColor('#4fc3f7');
+    });
+    bg.on('pointerout', () => {
+      bg.setFillStyle(0x1a2332, 1);
+      text.setColor('#ffffff');
+    });
+    bg.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event?.stopPropagation?.();
+      this.ignoreNextPointerUp = true;
+      onClick();
+    });
+
+    return { bg, text };
+  }
+
+  private clearPauseMenu(): void {
     this.pauseOverlay?.destroy(true);
     this.pauseOverlay = undefined;
+    this.soundMenuLabel = undefined;
+  }
+
+  private startNewGame(): void {
+    this.clearPauseMenu();
+    this.isPaused = false;
+    this.physics.world.resume();
+    this.time.paused = false;
+    this.registry.set('score', 0);
+    this.registry.set('lives', START_LIVES);
+    this.registry.set('level', 0);
+    this.registry.set('uiOverlay', 'none');
+    this.registry.set('effectGlue', false);
+    this.registry.set('effectBullet', false);
+    this.registry.set('effectLaser', false);
+    this.scene.restart({ level: 0 });
+  }
+
+  private goToMainMenu(): void {
+    this.clearPauseMenu();
+    this.isPaused = false;
+    this.physics.world.resume();
+    this.time.paused = false;
+    this.registry.set('uiOverlay', 'none');
+    this.scene.stop('UIScene');
+    this.scene.start('MenuScene');
   }
 
   private launchStuckBalls(): void {
@@ -873,13 +992,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    // P always toggles pause (except during win/lose overlays)
-    if (this.pauseKey && Phaser.Input.Keyboard.JustDown(this.pauseKey)) {
+    // ESC or P opens/closes the pause menu (except win/lose overlays)
+    const escPressed =
+      this.escKey && Phaser.Input.Keyboard.JustDown(this.escKey);
+    const pPressed =
+      this.pauseKey && Phaser.Input.Keyboard.JustDown(this.pauseKey);
+    if (escPressed || pPressed) {
       this.togglePause();
     }
 
     if (this.isPaused) {
-      // Physics/time frozen; overlay visible
+      // Physics/time frozen; pause menu interactive
       return;
     }
 

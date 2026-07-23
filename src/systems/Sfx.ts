@@ -1,12 +1,15 @@
 import Phaser from 'phaser';
+import { SOUND_MUTED_KEY } from '../config';
 
 /**
  * Procedural WebAudio SFX via Phaser sound context.
  * Unlock happens after first user gesture (menu SPACE).
+ * Mute is global and persisted in localStorage.
  */
 export class Sfx {
   private scene: Phaser.Scene;
   private unlocked = false;
+  private static muted = Sfx.loadMuted();
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -22,6 +25,32 @@ export class Sfx {
 
   get isUnlocked(): boolean {
     return this.unlocked || !this.scene.sound.locked;
+  }
+
+  static get isMuted(): boolean {
+    return Sfx.muted;
+  }
+
+  static setMuted(muted: boolean): void {
+    Sfx.muted = muted;
+    try {
+      localStorage.setItem(SOUND_MUTED_KEY, muted ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }
+
+  static toggleMuted(): boolean {
+    Sfx.setMuted(!Sfx.muted);
+    return Sfx.muted;
+  }
+
+  private static loadMuted(): boolean {
+    try {
+      return localStorage.getItem(SOUND_MUTED_KEY) === '1';
+    } catch {
+      return false;
+    }
   }
 
   /** Call on first SPACE / click to satisfy autoplay policy. */
@@ -50,7 +79,7 @@ export class Sfx {
     gain = 0.08,
     freqEnd?: number,
   ): void {
-    if (!this.isUnlocked) return;
+    if (Sfx.muted || !this.isUnlocked) return;
     const ctx = this.getAudioContext();
     if (!ctx) return;
     try {
@@ -76,7 +105,7 @@ export class Sfx {
   }
 
   private noiseBurst(duration: number, gain = 0.05): void {
-    if (!this.isUnlocked) return;
+    if (Sfx.muted || !this.isUnlocked) return;
     const ctx = this.getAudioContext();
     if (!ctx) return;
     try {

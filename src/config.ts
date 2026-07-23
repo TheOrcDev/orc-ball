@@ -72,6 +72,7 @@ export const COLORS = {
 } as const;
 
 export const HIGH_SCORE_KEY = 'orc-ball-highscore';
+export const SOUND_MUTED_KEY = 'orc-ball-sound-muted';
 
 export const SCORE_PER_HIT = 10;
 export const SCORE_PER_BREAK = 50;
