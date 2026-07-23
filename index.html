@@ -6,9 +6,70 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
+
+    <!-- Primary -->
+    <title>ORC-BALL — Retro Arcade Breakout</title>
+    <meta
+      name="title"
+      content="ORC-BALL — Retro Arcade Breakout"
+    />
+    <meta
+      name="description"
+      content="Smash bricks in ORC-BALL, a fast retro Breakout / DX-Ball style arcade game. Power-ups, lasers, multi-ball, glue paddle, and 20 levels. Free to play in your browser."
+    />
+    <meta
+      name="keywords"
+      content="orc-ball, orc ball, breakout, dx-ball, arkanoid, arcade, retro game, browser game, free game, brick breaker, phaser"
+    />
+    <meta name="author" content="OrcDev" />
+    <meta name="creator" content="OrcDev" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0a0a12" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- PWA / mobile -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>orc-ball</title>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ORC-BALL" />
+    <meta name="application-name" content="ORC-BALL" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/orc-ball-landing.jpg" />
+
+    <!-- Open Graph / Facebook / LinkedIn / Discord -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ORC-BALL" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="ORC-BALL — Retro Arcade Breakout" />
+    <meta
+      property="og:description"
+      content="Smash bricks in a fast retro Breakout clone with power-ups, lasers, multi-ball, and 20 levels. Play free in the browser."
+    />
+    <meta property="og:image" content="/orc-ball-landing.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta
+      property="og:image:alt"
+      content="ORC-BALL retro pixel art: cyan paddle, ball mid-air, brick wall exploding"
+    />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ORC-BALL — Retro Arcade Breakout" />
+    <meta
+      name="twitter:description"
+      content="Smash bricks in a fast retro Breakout clone with power-ups, lasers, multi-ball, and 20 levels. Play free in the browser."
+    />
+    <meta name="twitter:image" content="/orc-ball-landing.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="ORC-BALL retro pixel art title screen"
+    />
+
     <style>
       * {
         margin: 0;
@@ -20,7 +81,7 @@
       body {
         width: 100%;
         height: 100%;
-        background: #000;
+        background: #0a0a12;
         overflow: hidden;
         touch-action: none;
         overscroll-behavior: none;
@@ -47,7 +108,7 @@
     </style>
   </head>
   <body>
-    <div id="game"></div>
+    <div id="game" role="application" aria-label="ORC-BALL arcade game"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
