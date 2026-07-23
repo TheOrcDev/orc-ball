@@ -40,6 +40,7 @@ import { Ball } from '../objects/Ball';
 import { Brick } from '../objects/Brick';
 import { Paddle } from '../objects/Paddle';
 import { PowerUp, POWERUP_LABEL } from '../objects/PowerUp';
+import { BoardFx } from '../systems/BoardFx';
 import { PowerUpManager } from '../systems/PowerUpManager';
 import { Sfx } from '../systems/Sfx';
 
@@ -72,6 +73,7 @@ export class GameScene extends Phaser.Scene {
   private pointerDownY = 0;
   private pointerDragging = false;
   private ignoreNextPointerUp = false;
+  private boardFx!: BoardFx;
 
   constructor() {
     super('GameScene');
@@ -105,8 +107,11 @@ export class GameScene extends Phaser.Scene {
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
 
+    this.boardFx = new BoardFx(this);
+
     this.touchUi = prefersTouchUi();
     this.paddle = new Paddle(this);
+    this.paddle.setDepth(10);
     this.setupPointerControls();
     if (this.touchUi) this.createTouchChrome();
     this.balls = this.physics.add.group({
@@ -135,9 +140,13 @@ export class GameScene extends Phaser.Scene {
         onBonus: () => this.sfx.powerUp(),
         onMalus: () => this.sfx.powerDown(),
         onStickyExpired: () => this.launchStuckBalls(),
-        onEffectsChanged: ({ sticky, fireball }) => {
-          this.registry.set('effectGlue', sticky);
-          this.registry.set('effectBullet', fireball);
+        onEffectsChanged: (effects) => {
+          this.registry.set('effectGlue', effects.sticky);
+          this.registry.set('effectBullet', effects.fireball);
+          this.boardFx.setEffects(effects, this.time.now);
+        },
+        onMultiballVisual: () => {
+          this.boardFx.pulseMulti(this.time.now);
         },
       },
     );
@@ -159,9 +168,12 @@ export class GameScene extends Phaser.Scene {
       tint: [COLORS.fireTint, 0xffab40, 0xff3d00],
       frequency: 24,
       quantity: 2,
+      blendMode: 'ADD',
       follow: undefined,
       emitting: false,
     });
+    this.breakEmitter.setDepth(20);
+    this.fireTrailEmitter.setDepth(15);
 
     // Colliders — group-based for multi-ball
     this.physics.add.collider(
@@ -210,6 +222,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.on('shutdown', () => {
       this.powerUpManager.destroy();
+      this.boardFx.destroy();
     });
   }
 
@@ -234,7 +247,7 @@ export class GameScene extends Phaser.Scene {
       const x = startX + b.col * (BRICK_WIDTH + BRICK_GAP);
       const y = startY + b.row * (BRICK_HEIGHT + BRICK_GAP);
       const brick = new Brick(this, x, y);
-      brick.setup(b.kind, b.hp === Infinity ? 99 : b.hp);
+      brick.setup(b.kind, b.hp === Infinity ? 99 : b.hp, b.row);
       this.bricks.add(brick);
       // Static body needs refresh after add
       brick.refreshBody();
@@ -462,6 +475,7 @@ export class GameScene extends Phaser.Scene {
       now,
     );
     this.sfx.paddleHit();
+    this.boardFx.crackleAt(ball.x, ball.y);
   };
 
   /**
@@ -532,6 +546,7 @@ export class GameScene extends Phaser.Scene {
       this.sfx.brickBreak();
       this.breakEmitter.setParticleTint(color);
       this.breakEmitter.explode(12, brick.x, brick.y);
+      this.boardFx.crackleAt(brick.x, brick.y);
       this.cameras.main.shake(100, 0.004);
       if (isFire || ball.isFireball) {
         this.cameras.main.flash(80, 255, 120, 40, false);
@@ -683,6 +698,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    this.boardFx.update(time, delta);
+
     if (this.pausedForOverlay) {
       if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
         this.handleOverlaySpace();

@@ -13,11 +13,14 @@ export class Brick extends Phaser.Physics.Arcade.Sprite {
     this.setOrigin(0.5, 0.5);
   }
 
-  setup(kind: 'hp' | 'indestructible', hp: number): void {
+  setup(kind: 'hp' | 'indestructible', hp: number, row = 0): void {
     this.brickType = kind;
     this.hp = kind === 'indestructible' ? Number.POSITIVE_INFINITY : hp;
     this.maxHp = kind === 'indestructible' ? 99 : hp;
     this.applyTint();
+    // Subtle faux-3D: higher rows slightly smaller / darker depth cue
+    const depth = 1 - Math.min(row, 8) * 0.012;
+    this.setScale(depth);
     this.setActive(true);
     this.setVisible(true);
     const body = this.body as Phaser.Physics.Arcade.StaticBody;

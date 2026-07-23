@@ -24,7 +24,13 @@ export type PowerUpHooks = {
   onBonus?: () => void;
   /** Fired when glue (sticky) expires — launch any stuck balls. */
   onStickyExpired?: () => void;
-  onEffectsChanged?: (effects: { sticky: boolean; fireball: boolean }) => void;
+  onEffectsChanged?: (effects: {
+    sticky: boolean;
+    fireball: boolean;
+    expand: boolean;
+    shrink: boolean;
+  }) => void;
+  onMultiballVisual?: () => void;
 };
 
 /**
@@ -97,6 +103,7 @@ export class PowerUpManager {
 
     if (result.spawnMultiball) {
       this.hooks.onMultiball();
+      this.hooks.onMultiballVisual?.();
     }
 
     if (result.gainedLife) {
@@ -106,11 +113,16 @@ export class PowerUpManager {
     if (type === 'EXPAND') {
       this.clearTimer('SHRINK');
       this.paddle.setWidthScale(this.state.paddleScale);
+      this.paddle.clearTint();
+      this.paddle.setTint(COLORS.expand);
       this.scheduleTimed('EXPAND', duration);
+      this.emitEffects();
     } else if (type === 'SHRINK') {
       this.clearTimer('EXPAND');
       this.paddle.setWidthScale(this.state.paddleScale);
+      this.paddle.setTint(COLORS.shrink);
       this.scheduleTimed('SHRINK', duration);
+      this.emitEffects();
     } else if (type === 'STICKY') {
       this.paddle.sticky = true;
       this.paddle.setTint(COLORS.sticky);
@@ -135,6 +147,8 @@ export class PowerUpManager {
     this.hooks.onEffectsChanged?.({
       sticky: this.state.sticky,
       fireball: this.state.fireball,
+      expand: this.state.active.has('EXPAND'),
+      shrink: this.state.active.has('SHRINK'),
     });
   }
 
@@ -155,12 +169,17 @@ export class PowerUpManager {
       if (!this.state.active.has('EXPAND') && !this.state.active.has('SHRINK')) {
         this.state.paddleScale = 1;
         this.paddle.resetWidth();
+        if (!this.state.sticky) this.paddle.clearTint();
+        else this.paddle.setTint(COLORS.sticky);
       }
+      this.emitEffects();
     }
     if (effect === 'STICKY') {
       this.state.sticky = false;
       this.paddle.sticky = false;
-      this.paddle.clearTint();
+      if (this.state.active.has('EXPAND')) this.paddle.setTint(COLORS.expand);
+      else if (this.state.active.has('SHRINK')) this.paddle.setTint(COLORS.shrink);
+      else this.paddle.clearTint();
       this.hooks.onStickyExpired?.();
       this.emitEffects();
     }

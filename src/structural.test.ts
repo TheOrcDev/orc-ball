@@ -108,6 +108,12 @@ describe('structural audit of shipped source', () => {
     expect(src).toMatch(/changedata/);
   });
 
+  it('has BoardFx electricity and power-reactive themes', () => {
+    expect(src).toMatch(/BoardFx/);
+    expect(src).toMatch(/fxTheme|resolveFxThemeId|getFxTheme/);
+    expect(src).toMatch(/crackleAt|setEffects/);
+  });
+
   it('index.html mounts #game on black body; vite base and phaser chunk', () => {
     expect(index).toMatch(/id="game"/);
     expect(index).toMatch(/background:\s*#000/);
