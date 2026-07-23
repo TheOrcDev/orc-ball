@@ -143,6 +143,7 @@ export class PowerUpManager {
       this.scheduleTimed('FIREBALL', duration);
       this.emitEffects();
     } else if (type === 'LASER') {
+      this.paddle.setLaserLook(true);
       this.scheduleTimed('LASER', duration);
       this.emitEffects();
     }
@@ -207,6 +208,7 @@ export class PowerUpManager {
     }
     if (effect === 'LASER') {
       this.state.laser = false;
+      this.paddle.setLaserLook(false);
       this.emitEffects();
     }
   }
@@ -229,6 +231,7 @@ export class PowerUpManager {
     this.state = resetPowerUpState(this.state, true);
     this.paddle.resetWidth();
     this.paddle.setGlueLook(false);
+    this.paddle.setLaserLook(false);
     this.paddle.clearTint();
     this.applyFireballToAll(false);
     this.emitEffects();

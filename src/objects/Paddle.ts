@@ -25,6 +25,10 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   private glueOverlay?: Phaser.GameObjects.Graphics;
   private glueDripPhase = 0;
   private glueLook = false;
+  /** Twin laser cannons while LASER power is active. */
+  private laserOverlay?: Phaser.GameObjects.Graphics;
+  private laserLook = false;
+  private laserPulse = 0;
   private widthScale = PADDLE_SCALE_NORMAL;
 
   constructor(scene: Phaser.Scene, x?: number, y?: number) {
@@ -109,6 +113,74 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   private destroyGlueOverlay(): void {
     this.glueOverlay?.destroy();
     this.glueOverlay = undefined;
+  }
+
+  /**
+   * LASER power: draw twin gun turrets on the left/right ends of the paddle.
+   */
+  setLaserLook(active: boolean): void {
+    this.laserLook = active;
+    if (active) {
+      this.ensureLaserOverlay();
+      this.redrawLaserOverlay();
+    } else {
+      this.destroyLaserOverlay();
+    }
+  }
+
+  get hasLaserLook(): boolean {
+    return this.laserLook;
+  }
+
+  private ensureLaserOverlay(): void {
+    if (this.laserOverlay) return;
+    this.laserOverlay = this.scene.add.graphics().setDepth(this.depth + 2);
+  }
+
+  private destroyLaserOverlay(): void {
+    this.laserOverlay?.destroy();
+    this.laserOverlay = undefined;
+  }
+
+  private redrawLaserOverlay(): void {
+    const g = this.laserOverlay;
+    if (!g || !this.laserLook) return;
+    g.clear();
+
+    const halfW = this.displayWidth / 2;
+    const top = this.faceTop;
+    const faceH = this.faceHeight;
+    const inset = 8 * this.scaleX;
+    const leftX = this.x - halfW + inset;
+    const rightX = this.x + halfW - inset;
+    const glow = 0.55 + Math.sin(this.laserPulse * 4) * 0.2;
+
+    this.drawLaserCannon(g, leftX, top, faceH, glow);
+    this.drawLaserCannon(g, rightX, top, faceH, glow);
+  }
+
+  private drawLaserCannon(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    faceTop: number,
+    faceH: number,
+    glow: number,
+  ): void {
+    const s = this.scaleX;
+    const baseY = faceTop + faceH * 0.15;
+    // Mount plate on paddle
+    g.fillStyle(0x37474f, 0.95);
+    g.fillRoundedRect(x - 7 * s, baseY, 14 * s, faceH * 0.7, 2);
+    // Barrel pointing up
+    g.fillStyle(0xff1744, 0.95);
+    g.fillRect(x - 3 * s, faceTop - 14 * s, 6 * s, 16 * s);
+    g.fillStyle(0xff8a80, glow);
+    g.fillRect(x - 1.5 * s, faceTop - 14 * s, 3 * s, 16 * s);
+    // Muzzle tip glow
+    g.fillStyle(0xffffff, glow);
+    g.fillCircle(x, faceTop - 14 * s, 3.5 * s);
+    g.fillStyle(0xff5252, 0.8);
+    g.fillCircle(x, faceTop - 14 * s, 2 * s);
   }
 
   private redrawGlueOverlay(): void {
@@ -215,6 +287,10 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.glueDripPhase += dt * 3;
       this.redrawGlueOverlay();
     }
+    if (this.laserLook) {
+      this.laserPulse += dt;
+      this.redrawLaserOverlay();
+    }
   }
 
   get boundsLeft(): number {
@@ -241,6 +317,7 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
 
   destroy(fromScene?: boolean): void {
     this.destroyGlueOverlay();
+    this.destroyLaserOverlay();
     super.destroy(fromScene);
   }
 }

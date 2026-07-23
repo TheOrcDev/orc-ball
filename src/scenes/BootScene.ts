@@ -49,17 +49,20 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
-  /** Thin red laser bolt (fires upward from paddle ends). */
+  /** Bright red laser bolt (fires upward from paddle ends). */
   private bakeLaser(): void {
     const w = LASER_WIDTH;
     const h = LASER_HEIGHT;
     const g = this.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0xff1744, 1);
-    g.fillRoundedRect(0, 0, w, h, 1);
-    g.fillStyle(0xff8a80, 0.9);
+    // Outer glow
+    g.fillStyle(0xff1744, 0.5);
+    g.fillRoundedRect(0, 0, w, h, 2);
+    // Core
+    g.fillStyle(0xff5252, 1);
     g.fillRect(1, 0, Math.max(1, w - 2), h);
-    g.fillStyle(0xffffff, 0.75);
-    g.fillRect(Math.floor(w / 2), 0, 1, h);
+    // Hot white center
+    g.fillStyle(0xffffff, 0.95);
+    g.fillRect(Math.floor(w / 2) - 0.5, 0, 2, h);
     g.generateTexture('laser', w, h);
     g.destroy();
   }

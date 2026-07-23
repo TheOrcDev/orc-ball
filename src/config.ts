@@ -44,10 +44,10 @@ export const POWERUP_DURATION_LASER_MS = 12000;
 export const DEFAULT_DROP_CHANCE = 0.2;
 
 /** Twin laser shots from paddle ends (LASER power). */
-export const LASER_SPEED = 520;
-export const LASER_WIDTH = 4;
-export const LASER_HEIGHT = 18;
-export const LASER_COOLDOWN_MS = 280;
+export const LASER_SPEED = 640;
+export const LASER_WIDTH = 6;
+export const LASER_HEIGHT = 22;
+export const LASER_COOLDOWN_MS = 220;
 
 export const COLORS = {
   bg: 0x0a0a12,

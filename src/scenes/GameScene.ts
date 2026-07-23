@@ -539,8 +539,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnLaser(x: number, y: number): void {
-    const laser = new Laser(this, x, y);
+    // Spawn slightly above paddle face so bolts clear the cannons
+    const laser = new Laser(this, x, y - 8);
     this.lasers.add(laser);
+    // Velocity MUST be set after group.add — Phaser groups reset body state
+    laser.arm();
   }
 
   private onLaserBrick: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
