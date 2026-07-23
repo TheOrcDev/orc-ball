@@ -67,8 +67,8 @@ export class MenuScene extends Phaser.Scene {
         WIDTH / 2,
         HEIGHT * 0.69,
         touch
-          ? 'G=GLUE  B=BULLET  R=LASER (twin beams)'
-          : 'G=GLUE  B=BULLET  R=LASER (SPACE shoots twin beams)',
+          ? 'G=GLUE  B=BULLET  L=LASER  M=MULTI  E/S size  +=life'
+          : 'G=GLUE  B=BULLET  L=LASER  M=MULTI  E/S=size  +=life',
         {
           fontFamily: 'monospace',
           fontSize: '12px',

@@ -33,18 +33,24 @@ export const POWERUP_LABEL: Record<PowerUpType, string> = {
   LASER: 'LASER',
 };
 
+/**
+ * Big letter painted on every falling drop.
+ * L = Laser, G = Glue, B = Bullet, M = Multi, E = Expand, S = Shrink, + = Life.
+ */
 export const POWERUP_LETTER: Record<PowerUpType, string> = {
   EXPAND: 'E',
   SHRINK: 'S',
   MULTIBALL: 'M',
   STICKY: 'G',
   FIREBALL: 'B',
-  EXTRA_LIFE: 'L',
-  LASER: 'R',
+  EXTRA_LIFE: '+',
+  LASER: 'L',
 };
 
 export class PowerUp extends Phaser.Physics.Arcade.Image {
   powerType: PowerUpType = 'EXPAND';
+  /** Floating letter follows the capsule (readable even if texture bake fails). */
+  private letterLabel?: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, x: number, y: number, type: PowerUpType) {
     super(scene, x, y, TEXTURE_BY_TYPE[type]);
@@ -52,11 +58,42 @@ export class PowerUp extends Phaser.Physics.Arcade.Image {
     scene.physics.add.existing(this);
     this.powerType = type;
     this.setOrigin(0.5, 0.5);
+    this.setDepth(25);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
     body.setVelocity(0, POWERUP_FALL_SPEED);
     body.setCollideWorldBounds(false);
+
+    // Live letter on top of the colored capsule — always visible
+    this.letterLabel = scene.add
+      .text(x, y, POWERUP_LETTER[type], {
+        fontFamily: 'monospace',
+        fontSize: '22px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5)
+      .setDepth(26);
+  }
+
+  /** Keep letter locked to the falling capsule. */
+  syncLabel(): void {
+    if (!this.letterLabel) return;
+    if (!this.active || !this.visible) {
+      this.letterLabel.setVisible(false);
+      return;
+    }
+    this.letterLabel.setVisible(true);
+    this.letterLabel.setPosition(this.x, this.y);
+  }
+
+  destroy(fromScene?: boolean): void {
+    this.letterLabel?.destroy();
+    this.letterLabel = undefined;
+    super.destroy(fromScene);
   }
 
   static textureKey(type: PowerUpType): string {

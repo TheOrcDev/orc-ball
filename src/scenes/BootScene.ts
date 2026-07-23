@@ -203,24 +203,31 @@ export class BootScene extends Phaser.Scene {
     const size = POWERUP_SIZE;
     const g = this.make.graphics({ x: 0, y: 0 });
     g.fillStyle(color, 1);
-    g.fillRoundedRect(0, 0, size, size, 5);
+    g.fillRoundedRect(0, 0, size, size, 6);
     // Bevel
-    g.fillStyle(0xffffff, 0.3);
-    g.fillRect(2, 2, size - 4, 5);
-    g.fillStyle(0x000000, 0.25);
-    g.fillRect(2, size - 6, size - 4, 4);
-    g.lineStyle(2, 0xffffff, 0.7);
-    g.strokeRoundedRect(1, 1, size - 2, size - 2, 5);
+    g.fillStyle(0xffffff, 0.35);
+    g.fillRect(3, 2, size - 6, 7);
+    g.fillStyle(0x000000, 0.28);
+    g.fillRect(3, size - 8, size - 6, 5);
+    g.lineStyle(2, 0xffffff, 0.85);
+    g.strokeRoundedRect(1, 1, size - 2, size - 2, 6);
 
-    const label = this.add
-      .text(size / 2, size / 2, letter, {
-        fontFamily: 'monospace',
-        fontSize: '16px',
-        fontStyle: 'bold',
-        color: '#ffffff',
+    // Bold letter centered on capsule (draw at size/2 — NOT 0,0)
+    const label = this.make
+      .text({
+        x: size / 2,
+        y: size / 2,
+        text: letter,
+        style: {
+          fontFamily: 'monospace',
+          fontSize: '24px',
+          fontStyle: 'bold',
+          color: '#ffffff',
+          stroke: '#000000',
+          strokeThickness: 6,
+        },
       })
-      .setOrigin(0.5)
-      .setVisible(false);
+      .setOrigin(0.5);
 
     const rt = this.make.renderTexture({
       x: 0,
@@ -228,8 +235,10 @@ export class BootScene extends Phaser.Scene {
       width: size,
       height: size,
     });
+    rt.clear();
     rt.draw(g, 0, 0);
-    rt.draw(label, 0, 0);
+    // Use the text object's own x/y (center) — passing 0,0 clipped the glyph
+    rt.draw(label);
     rt.saveTexture(key);
     rt.destroy();
     label.destroy();

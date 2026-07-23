@@ -34,7 +34,8 @@ export const BRICK_HEIGHT = 32;
 export const BRICK_GAP = 2;
 export const BRICK_GRID_TOP = 80;
 
-export const POWERUP_SIZE = 28;
+/** Power-up capsule size — large enough for a bold letter glyph. */
+export const POWERUP_SIZE = 36;
 export const POWERUP_FALL_SPEED = 150;
 export const POWERUP_DURATION_MS = 10000;
 /** Glue / bullet last a bit longer so they feel impactful. */

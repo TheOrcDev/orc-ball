@@ -952,9 +952,11 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Cull fallen power-ups
+    // Sync drop letters + cull fallen power-ups
     for (const pu of this.powerUps.getChildren() as PowerUp[]) {
-      if (pu.active && pu.y > HEIGHT + 40) pu.destroy();
+      if (!pu.active) continue;
+      pu.syncLabel();
+      if (pu.y > HEIGHT + 40) pu.destroy();
     }
 
     // Life lost when no balls remain
