@@ -30,6 +30,8 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     // Title / landing art from public/
     this.load.image('menu-bg', 'orc-ball-landing.jpg');
+    // In-game soundtrack (Alp.traum – Binary Eagle)
+    this.load.audio('music-game', 'audio/binary-eagle.mp3');
   }
 
   create(): void {

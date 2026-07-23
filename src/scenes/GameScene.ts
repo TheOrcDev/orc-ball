@@ -47,6 +47,7 @@ import { Laser } from '../objects/Laser';
 import { Paddle } from '../objects/Paddle';
 import { PowerUp, POWERUP_LABEL } from '../objects/PowerUp';
 import { BoardFx } from '../systems/BoardFx';
+import { Music } from '../systems/Music';
 import {
   clearRunKeepUnlocks,
   loadProgress,
@@ -138,6 +139,8 @@ export class GameScene extends Phaser.Scene {
 
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
+    // In-game BGM (Binary Eagle) — respects mute
+    Music.playGame(this);
 
     this.boardFx = new BoardFx(this);
 
@@ -270,6 +273,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.events.on('shutdown', () => {
+      Music.stop(this);
       this.powerUpManager.destroy();
       this.boardFx.destroy();
     });
@@ -480,6 +484,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
     this.time.paused = true;
     this.paddle.setPointerTargetX(null);
+    Music.pause(this);
     this.showPauseMenu();
   }
 
@@ -489,6 +494,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.resume();
     this.time.paused = false;
     this.clearPauseMenu();
+    Music.resume(this);
   }
 
   /** Full pause menu: resume, new game, sound, main menu. */
@@ -542,6 +548,7 @@ export class GameScene extends Phaser.Scene {
         y: 40,
         onClick: () => {
           Sfx.toggleMuted();
+          Music.applyMuteState(this);
           if (this.soundMenuLabel) {
             this.soundMenuLabel.setText(
               Sfx.isMuted ? 'Sound: OFF' : 'Sound: ON',
@@ -615,6 +622,7 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = false;
     this.physics.world.resume();
     this.time.paused = false;
+    Music.stop(this);
     clearRunKeepUnlocks();
     this.registry.set('score', 0);
     this.registry.set('lives', START_LIVES);
@@ -635,6 +643,7 @@ export class GameScene extends Phaser.Scene {
       saveRun(this.levelIndex, score, lives);
       this.registry.set('highScore', loadProgress().highScore);
     }
+    Music.stop(this);
     this.clearPauseMenu();
     this.isPaused = false;
     this.physics.world.resume();
