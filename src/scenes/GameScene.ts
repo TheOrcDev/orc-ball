@@ -58,12 +58,16 @@ export class GameScene extends Phaser.Scene {
   private breakEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private fireTrailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private spaceKey?: Phaser.Input.Keyboard.Key;
+  private pauseKey?: Phaser.Input.Keyboard.Key;
   private levelIndex = 0;
   private destructibleRemaining = 0;
   private ballSpeed = DEFAULT_BALL_SPEED;
   private pausedForOverlay = false;
   private awaitingAdvance = false;
   private gameOverFlag = false;
+  /** Player toggle pause (P key) — separate from level/game-over overlays. */
+  private isPaused = false;
+  private pauseOverlay?: Phaser.GameObjects.Container;
   /** Touch / small-screen chrome (LAUNCH button + hints). */
   private touchUi = false;
   private launchBtn?: Phaser.GameObjects.Container;
@@ -84,6 +88,8 @@ export class GameScene extends Phaser.Scene {
     this.pausedForOverlay = false;
     this.awaitingAdvance = false;
     this.gameOverFlag = false;
+    this.isPaused = false;
+    this.pauseOverlay = undefined;
   }
 
   create(): void {
@@ -92,9 +98,12 @@ export class GameScene extends Phaser.Scene {
     // Open bottom: left, right, top closed; bottom open
     this.physics.world.setBoundsCollision(true, true, true, false);
 
-    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D');
+    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P');
     this.spaceKey = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
+    );
+    this.pauseKey = this.input.keyboard?.addKey(
+      Phaser.Input.Keyboard.KeyCodes.P,
     );
 
     // Ensure registry defaults
@@ -290,6 +299,7 @@ export class GameScene extends Phaser.Scene {
       this.handleOverlaySpace();
       return;
     }
+    if (this.isPaused) return;
     // Launch button handles its own press
     if (this.isPointerOnLaunchBtn(pointer)) return;
 
@@ -301,7 +311,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.isDown || this.pausedForOverlay) return;
+    if (!pointer.isDown || this.pausedForOverlay || this.isPaused) return;
     if (this.isPointerOnLaunchBtn(pointer) && !this.paddle.hasPointerTarget) {
       return;
     }
@@ -320,7 +330,7 @@ export class GameScene extends Phaser.Scene {
       this.paddle.setPointerTargetX(null);
       return;
     }
-    if (this.pausedForOverlay) {
+    if (this.pausedForOverlay || this.isPaused) {
       this.paddle.setPointerTargetX(null);
       return;
     }
@@ -408,7 +418,64 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private togglePause(): void {
+    // Don't fight level-complete / game-over interstitials
+    if (this.pausedForOverlay || this.gameOverFlag || this.awaitingAdvance) {
+      return;
+    }
+    if (this.isPaused) this.resumeGame();
+    else this.pauseGame();
+  }
+
+  private pauseGame(): void {
+    if (this.isPaused) return;
+    this.isPaused = true;
+    this.physics.world.pause();
+    this.time.paused = true;
+    this.paddle.setPointerTargetX(null);
+    this.showPauseOverlay();
+  }
+
+  private resumeGame(): void {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    this.physics.world.resume();
+    this.time.paused = false;
+    this.clearPauseOverlay();
+  }
+
+  private showPauseOverlay(): void {
+    this.clearPauseOverlay();
+    const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(2000);
+    const bg = this.add
+      .rectangle(0, 0, WIDTH * 0.55, 140, 0x000000, 0.78)
+      .setStrokeStyle(2, COLORS.title);
+    const title = this.add
+      .text(0, -28, 'PAUSED', {
+        fontFamily: 'monospace',
+        fontSize: '36px',
+        fontStyle: 'bold',
+        color: '#4fc3f7',
+      })
+      .setOrigin(0.5);
+    const sub = this.add
+      .text(0, 28, 'Press P to resume', {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    container.add([bg, title, sub]);
+    this.pauseOverlay = container;
+  }
+
+  private clearPauseOverlay(): void {
+    this.pauseOverlay?.destroy(true);
+    this.pauseOverlay = undefined;
+  }
+
   private launchStuckBalls(): void {
+    if (this.isPaused || this.pausedForOverlay) return;
     const stuck = (this.balls.getChildren() as Ball[]).filter(
       (b) => b.active && b.stuckToPaddle,
     );
@@ -698,6 +765,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    // P always toggles pause (except during win/lose overlays)
+    if (this.pauseKey && Phaser.Input.Keyboard.JustDown(this.pauseKey)) {
+      this.togglePause();
+    }
+
+    if (this.isPaused) {
+      // Physics/time frozen; overlay visible
+      return;
+    }
+
     this.boardFx.update(time, delta);
 
     if (this.pausedForOverlay) {

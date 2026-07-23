@@ -52,7 +52,8 @@ describe('structural audit of shipped source', () => {
     expect(src).toMatch(/LEFT|createCursorKeys/);
     expect(src).toMatch(/KeyCodes\.A/);
     expect(src).toMatch(/KeyCodes\.D/);
-    expect(src).toMatch(/addCapture\(['"]SPACE,LEFT,RIGHT,A,D['"]\)/);
+    expect(src).toMatch(/addCapture\(['"]SPACE,LEFT,RIGHT,A,D(?:,P)?['"]\)/);
+    expect(src).toMatch(/KeyCodes\.P|pauseKey|togglePause/);
   });
 
   it('has open-bottom bounds collision', () => {

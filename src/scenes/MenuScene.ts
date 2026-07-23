@@ -52,8 +52,8 @@ export class MenuScene extends Phaser.Scene {
         WIDTH / 2,
         HEIGHT * 0.62,
         touch
-          ? 'Drag to move paddle  ·  Tap / LAUNCH to serve'
-          : '← → / A D  move    SPACE  serve / launch',
+          ? 'Drag to move paddle  ·  Tap / LAUNCH to serve  ·  P pause'
+          : '← → / A D  move    SPACE  serve    P  pause',
         {
           fontFamily: 'monospace',
           fontSize: touch ? '13px' : '14px',
@@ -85,8 +85,8 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // Capture keys so SPACE doesn't scroll
-    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D');
+    // Capture keys so SPACE/arrows/P don't scroll the page
+    this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P');
 
     const space = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
