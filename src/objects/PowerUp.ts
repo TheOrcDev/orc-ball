@@ -10,6 +10,8 @@ const TEXTURE_BY_TYPE: Record<PowerUpType, string> = {
   FIREBALL: 'powerup-fireball',
   EXTRA_LIFE: 'powerup-extralife',
   LASER: 'powerup-laser',
+  SLOW: 'powerup-slow',
+  EXPLODE: 'powerup-explode',
 };
 
 export const POWERUP_COLOR: Record<PowerUpType, number> = {
@@ -20,9 +22,11 @@ export const POWERUP_COLOR: Record<PowerUpType, number> = {
   FIREBALL: COLORS.fireball,
   EXTRA_LIFE: COLORS.extraLife,
   LASER: COLORS.laser,
+  SLOW: COLORS.slow,
+  EXPLODE: COLORS.explode,
 };
 
-/** Player-facing names (STICKY = Glue, FIREBALL = Bullet, LASER = Laser). */
+/** Player-facing names (STICKY = Glue, FIREBALL = Bullet, EXPLODE = Blast). */
 export const POWERUP_LABEL: Record<PowerUpType, string> = {
   EXPAND: 'EXPAND',
   SHRINK: 'SHRINK',
@@ -31,11 +35,14 @@ export const POWERUP_LABEL: Record<PowerUpType, string> = {
   FIREBALL: 'BULLET',
   EXTRA_LIFE: 'LIFE',
   LASER: 'LASER',
+  SLOW: 'SLOW',
+  EXPLODE: 'BLAST',
 };
 
 /**
  * Big letter painted on every falling drop.
- * L = Laser, G = Glue, B = Bullet, M = Multi, E = Expand, S = Shrink, + = Life.
+ * L = Laser, G = Glue, B = Bullet, M = Multi, E = Expand, S = Shrink,
+ * + = Life, W = sloW, ! = Blast.
  */
 export const POWERUP_LETTER: Record<PowerUpType, string> = {
   EXPAND: 'E',
@@ -45,6 +52,8 @@ export const POWERUP_LETTER: Record<PowerUpType, string> = {
   FIREBALL: 'B',
   EXTRA_LIFE: '+',
   LASER: 'L',
+  SLOW: 'W',
+  EXPLODE: '!',
 };
 
 export class PowerUp extends Phaser.Physics.Arcade.Image {

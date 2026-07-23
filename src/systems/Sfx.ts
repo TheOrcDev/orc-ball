@@ -168,6 +168,13 @@ export class Sfx {
     setTimeout(() => this.blip(1046, 0.15, 'square', 0.08), 300);
   }
 
+  /** Cross-blast boom for EXPLODE power. */
+  explode(): void {
+    this.blip(90, 0.12, 'sawtooth', 0.1, 40);
+    setTimeout(() => this.blip(60, 0.18, 'square', 0.08, 30), 40);
+    setTimeout(() => this.blip(140, 0.08, 'triangle', 0.06, 80), 90);
+  }
+
   /** Bigger fanfare when the whole campaign is cleared. */
   victory(): void {
     const notes = [523, 659, 784, 1046, 784, 1046, 1319];

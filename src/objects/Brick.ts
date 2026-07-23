@@ -5,6 +5,9 @@ export class Brick extends Phaser.Physics.Arcade.Sprite {
   hp = 1;
   brickType: 'hp' | 'indestructible' = 'hp';
   maxHp = 1;
+  /** Grid coordinates for explosion neighbor lookups. */
+  gridCol = 0;
+  gridRow = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'brick');
@@ -13,8 +16,15 @@ export class Brick extends Phaser.Physics.Arcade.Sprite {
     this.setOrigin(0.5, 0.5);
   }
 
-  setup(kind: 'hp' | 'indestructible', hp: number, row = 0): void {
+  setup(
+    kind: 'hp' | 'indestructible',
+    hp: number,
+    row = 0,
+    col = 0,
+  ): void {
     this.brickType = kind;
+    this.gridCol = col;
+    this.gridRow = row;
     this.hp = kind === 'indestructible' ? Number.POSITIVE_INFINITY : hp;
     this.maxHp = kind === 'indestructible' ? 99 : hp;
     this.applyTint();
@@ -25,6 +35,14 @@ export class Brick extends Phaser.Physics.Arcade.Sprite {
     this.setVisible(true);
     const body = this.body as Phaser.Physics.Arcade.StaticBody;
     body.enable = true;
+  }
+
+  /** Instant destroy (blast / fireball). Works on HP and concrete X. */
+  forceDestroy(): { destroyed: boolean } {
+    if (!this.active) return { destroyed: false };
+    this.hp = 0;
+    this.destroyBrick();
+    return { destroyed: true };
   }
 
   get isIndestructible(): boolean {

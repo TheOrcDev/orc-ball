@@ -10,7 +10,9 @@ export type FxThemeId =
   | 'expand'
   | 'shrink'
   | 'multi'
-  | 'laser';
+  | 'laser'
+  | 'slow'
+  | 'explode';
 
 export interface ActiveFxFlags {
   sticky: boolean;
@@ -18,6 +20,8 @@ export interface ActiveFxFlags {
   expand: boolean;
   shrink: boolean;
   laser?: boolean;
+  slow?: boolean;
+  explode?: boolean;
   /** Brief multi flash after MULTIBALL collect (optional). */
   multiPulse?: boolean;
 }
@@ -149,12 +153,44 @@ const THEMES: Record<FxThemeId, FxTheme> = {
     wallIntensity: 0.75,
     label: 'LASER',
   },
+  slow: {
+    id: 'slow',
+    style: 'electric',
+    primary: 0x29b6f6,
+    secondary: 0x81d4fa,
+    glow: 0x0277bd,
+    bgTop: 0x0a1a28,
+    bgBottom: 0x040a12,
+    sparkTint: [0x29b6f6, 0xb3e5fc, 0x4fc3f7],
+    boltJitter: 8,
+    boltFrequencyMs: 140,
+    particleFrequency: 90,
+    wallIntensity: 0.5,
+    label: 'SLOW',
+  },
+  explode: {
+    id: 'explode',
+    style: 'electric',
+    primary: 0xffc107,
+    secondary: 0xffe082,
+    glow: 0xff6f00,
+    bgTop: 0x2a1800,
+    bgBottom: 0x120a00,
+    sparkTint: [0xffc107, 0xffab00, 0xff6f00, 0xffe082],
+    boltJitter: 24,
+    boltFrequencyMs: 55,
+    particleFrequency: 35,
+    wallIntensity: 0.95,
+    label: 'BLAST',
+  },
 };
 
 export function resolveFxThemeId(flags: ActiveFxFlags): FxThemeId {
+  if (flags.explode) return 'explode';
   if (flags.fireball) return 'bullet';
   if (flags.sticky) return 'glue';
   if (flags.laser) return 'laser';
+  if (flags.slow) return 'slow';
   if (flags.multiPulse) return 'multi';
   if (flags.expand) return 'expand';
   if (flags.shrink) return 'shrink';

@@ -12,7 +12,9 @@ export type TimedEffect =
   | 'SHRINK'
   | 'STICKY'
   | 'FIREBALL'
-  | 'LASER';
+  | 'LASER'
+  | 'SLOW'
+  | 'EXPLODE';
 
 export const TIMED_EFFECTS: readonly TimedEffect[] = [
   'EXPAND',
@@ -20,6 +22,8 @@ export const TIMED_EFFECTS: readonly TimedEffect[] = [
   'STICKY',
   'FIREBALL',
   'LASER',
+  'SLOW',
+  'EXPLODE',
 ] as const;
 
 export interface PowerUpState {
@@ -30,6 +34,8 @@ export interface PowerUpState {
   sticky: boolean;
   fireball: boolean;
   laser: boolean;
+  slow: boolean;
+  explode: boolean;
   lives: number;
 }
 
@@ -41,6 +47,8 @@ export function createPowerUpState(lives: number): PowerUpState {
     sticky: false,
     fireball: false,
     laser: false,
+    slow: false,
+    explode: false,
     lives,
   };
 }
@@ -77,6 +85,8 @@ export function applyPowerUp(
     sticky: state.sticky,
     fireball: state.fireball,
     laser: state.laser,
+    slow: state.slow,
+    explode: state.explode,
     lives: state.lives,
   };
 
@@ -179,6 +189,32 @@ export function applyPowerUp(
     };
   }
 
+  if (type === 'SLOW') {
+    next.active.add('SLOW');
+    next.expiresAt.set('SLOW', expiry);
+    next.slow = true;
+    return {
+      state: next,
+      spawnMultiball: false,
+      gainedLife: false,
+      refreshed: wasActive,
+      applied: true,
+    };
+  }
+
+  if (type === 'EXPLODE') {
+    next.active.add('EXPLODE');
+    next.expiresAt.set('EXPLODE', expiry);
+    next.explode = true;
+    return {
+      state: next,
+      spawnMultiball: false,
+      gainedLife: false,
+      refreshed: wasActive,
+      applied: true,
+    };
+  }
+
   return {
     state: next,
     spawnMultiball: false,
@@ -200,6 +236,8 @@ export function tickPowerUpExpiry(
     sticky: state.sticky,
     fireball: state.fireball,
     laser: state.laser,
+    slow: state.slow,
+    explode: state.explode,
     lives: state.lives,
   };
 
@@ -220,6 +258,8 @@ export function tickPowerUpExpiry(
       if (effect === 'STICKY') next.sticky = false;
       if (effect === 'FIREBALL') next.fireball = false;
       if (effect === 'LASER') next.laser = false;
+      if (effect === 'SLOW') next.slow = false;
+      if (effect === 'EXPLODE') next.explode = false;
     }
   }
   return next;
@@ -237,6 +277,8 @@ export function resetPowerUpState(
     sticky: false,
     fireball: false,
     laser: false,
+    slow: false,
+    explode: false,
     lives: keepLives ? state.lives : state.lives,
   };
 }

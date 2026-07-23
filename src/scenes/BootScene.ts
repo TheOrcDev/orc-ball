@@ -21,6 +21,8 @@ const POWERUP_TEX: Record<PowerUpType, string> = {
   FIREBALL: 'powerup-fireball',
   EXTRA_LIFE: 'powerup-extralife',
   LASER: 'powerup-laser',
+  SLOW: 'powerup-slow',
+  EXPLODE: 'powerup-explode',
 };
 
 export class BootScene extends Phaser.Scene {

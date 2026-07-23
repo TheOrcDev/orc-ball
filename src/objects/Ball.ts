@@ -12,6 +12,8 @@ import { paddleHitVelocity } from '../logic/steering';
 export class Ball extends Phaser.Physics.Arcade.Image {
   speed = DEFAULT_BALL_SPEED;
   isFireball = false;
+  /** Cross-blast: destroy hit brick + orthogonal neighbors. */
+  isExplosive = false;
   stuckToPaddle = false;
   stuckOffsetX = 0;
   stuckSince = 0;
@@ -112,15 +114,27 @@ export class Ball extends Phaser.Physics.Arcade.Image {
 
   setFireball(active: boolean): void {
     this.isFireball = active;
-    if (active) {
+    this.refreshBallTint();
+  }
+
+  setExplosive(active: boolean): void {
+    this.isExplosive = active;
+    this.refreshBallTint();
+  }
+
+  /** Fireball tint wins over explode; explode is amber. */
+  refreshBallTint(): void {
+    if (this.isFireball) {
       this.setTint(COLORS.fireTint);
+    } else if (this.isExplosive) {
+      this.setTint(COLORS.explodeTint);
     } else {
       this.clearTint();
     }
   }
 
   private clearFireballVisualIfNeeded(): void {
-    if (!this.isFireball) this.clearTint();
+    this.refreshBallTint();
   }
 
   launchWithVelocity(vx: number, vy: number): void {

@@ -28,11 +28,13 @@ import { getLevel, levelCount, LEVELS } from '../data/levels';
 import type { PowerUpType } from '../data/types';
 import { rollPowerUpDrop } from '../logic/drops';
 import { resolvePair } from '../logic/collidePair';
+import { isOrthogonalNeighbor } from '../logic/explode';
 import {
   canDamageBrick,
   shouldProcessBallBrickCollision,
 } from '../logic/fireball';
 import { parseLevel } from '../logic/levelParse';
+import { effectiveBallSpeed } from '../logic/slow';
 import {
   clonesForSource,
   multiballCloneAngles,
@@ -187,6 +189,8 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('effectGlue', false);
     this.registry.set('effectBullet', false);
     this.registry.set('effectLaser', false);
+    this.registry.set('effectSlow', false);
+    this.registry.set('effectExplode', false);
 
     this.lasers = this.physics.add.group({
       classType: Laser,
@@ -210,10 +214,15 @@ export class GameScene extends Phaser.Scene {
           this.registry.set('effectGlue', effects.sticky);
           this.registry.set('effectBullet', effects.fireball);
           this.registry.set('effectLaser', effects.laser);
+          this.registry.set('effectSlow', effects.slow);
+          this.registry.set('effectExplode', effects.explode);
           this.boardFx.setEffects(effects, this.time.now);
         },
         onMultiballVisual: () => {
           this.boardFx.pulseMulti(this.time.now);
+        },
+        onSlowChanged: () => {
+          this.syncAllBallSpeeds();
         },
       },
     );
@@ -322,7 +331,7 @@ export class GameScene extends Phaser.Scene {
       const x = startX + b.col * (BRICK_WIDTH + BRICK_GAP);
       const y = startY + b.row * (BRICK_HEIGHT + BRICK_GAP);
       const brick = new Brick(this, x, y);
-      brick.setup(b.kind, b.hp === Infinity ? 99 : b.hp, b.row);
+      brick.setup(b.kind, b.hp === Infinity ? 99 : b.hp, b.row, b.col);
       this.bricks.add(brick);
       // Static body needs refresh after add
       brick.refreshBody();
@@ -333,9 +342,23 @@ export class GameScene extends Phaser.Scene {
     this.balls.clear(true, true);
     const top = this.paddle.faceTop;
     const ball = this.createBall(this.paddle.x, top - BALL_RADIUS - 1);
-    ball.speed = this.ballSpeed;
+    ball.speed = this.getEffectiveBallSpeed();
     ball.stickTo(this.paddle.x, top, 0, this.time.now);
     this.powerUpManager.decorateNewBall(ball);
+  }
+
+  private getEffectiveBallSpeed(): number {
+    return effectiveBallSpeed(
+      this.ballSpeed,
+      this.powerUpManager?.isSlow ?? false,
+    );
+  }
+
+  private syncAllBallSpeeds(): void {
+    const speed = this.getEffectiveBallSpeed();
+    for (const b of this.balls.getChildren() as Ball[]) {
+      if (b.active) b.speed = speed;
+    }
   }
 
   private createBall(x: number, y: number): Ball {
@@ -844,6 +867,8 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('effectGlue', false);
     this.registry.set('effectBullet', false);
     this.registry.set('effectLaser', false);
+    this.registry.set('effectSlow', false);
+    this.registry.set('effectExplode', false);
     this.scene.restart({ level: 0 });
   }
 
@@ -1068,49 +1093,112 @@ export class GameScene extends Phaser.Scene {
     this.hitBrick(ball, brick, false);
   };
 
-  private hitBrick(ball: Ball, brick: Brick, isFire: boolean): void {
-    if (!canDamageBrick(isFire || ball.isFireball, brick.isIndestructible)) {
+  private hitBrick(
+    ball: Ball,
+    brick: Brick,
+    isFire: boolean,
+    opts: { fromBlast?: boolean } = {},
+  ): void {
+    const fromBlast = Boolean(opts.fromBlast);
+    const explosive = ball.isExplosive && !fromBlast;
+    // Blast / fireball one-shots; explosive also one-shots the center brick
+    const forceOneShot =
+      isFire || ball.isFireball || explosive || fromBlast;
+
+    if (
+      !forceOneShot &&
+      !canDamageBrick(false, brick.isIndestructible)
+    ) {
       // Indestructible + normal ball: just bounce (handled by collider)
       this.sfx.brickHit(3);
       return;
     }
 
-    const color = brick.tintColor;
-    const result = brick.takeHit(isFire || ball.isFireball);
+    if (!brick.active) return;
 
-    if (result.damaged && !result.destroyed) {
-      this.sfx.brickHit(brick.hp);
-      this.addScore(SCORE_PER_HIT);
+    const color = brick.tintColor;
+    let destroyed = false;
+
+    if (forceOneShot) {
+      destroyed = brick.forceDestroy().destroyed;
+    } else {
+      const result = brick.takeHit(false);
+      if (result.damaged && !result.destroyed) {
+        this.sfx.brickHit(brick.hp);
+        this.addScore(SCORE_PER_HIT);
+      }
+      destroyed = result.destroyed;
     }
 
-    if (result.destroyed) {
-      const wasX = brick.brickType === 'indestructible';
-      if (!wasX) {
-        this.destructibleRemaining = Math.max(0, this.destructibleRemaining - 1);
-        this.addScore(SCORE_PER_BREAK);
-      } else {
-        this.addScore(SCORE_PER_X_BREAK);
+    if (destroyed) {
+      this.finalizeBrickDestroy(brick, color, {
+        dropPowerUp: !fromBlast,
+        heavyFx: explosive || fromBlast,
+      });
+
+      // Cross blast: up / down / left / right neighbors
+      if (explosive) {
+        this.blastCross(brick, ball);
       }
-
-      this.sfx.brickBreak();
-      this.breakEmitter.setParticleTint(color);
-      this.breakEmitter.explode(12, brick.x, brick.y);
-      this.boardFx.crackleAt(brick.x, brick.y);
-      this.cameras.main.shake(100, 0.004);
-
-      // Speed ramp
-      this.ballSpeed = Math.min(MAX_BALL_SPEED, this.ballSpeed + BALL_SPEED_RAMP);
-      for (const b of this.balls.getChildren() as Ball[]) {
-        if (b.active && !b.stuckToPaddle) b.speed = this.ballSpeed;
-      }
-
-      this.maybeDropPowerUp(brick.x, brick.y);
-      brick.destroy();
 
       if (this.destructibleRemaining <= 0) {
         this.onLevelClear();
       }
     }
+  }
+
+  /** Destroy the four orthogonal neighbors of a brick (no recursive blasts). */
+  private blastCross(center: Brick, ball: Ball): void {
+    const origin = { col: center.gridCol, row: center.gridRow };
+    const neighbors = (this.bricks.getChildren() as Brick[]).filter(
+      (b) =>
+        b.active &&
+        b !== center &&
+        isOrthogonalNeighbor(origin, {
+          col: b.gridCol,
+          row: b.gridRow,
+        }),
+    );
+    this.sfx.explode();
+    this.cameras.main.shake(160, 0.01);
+    this.breakEmitter.setParticleTint(COLORS.explode);
+    this.breakEmitter.explode(28, center.x, center.y);
+
+    for (const n of neighbors) {
+      if (!n.active) continue;
+      this.hitBrick(ball, n, false, { fromBlast: true });
+    }
+  }
+
+  private finalizeBrickDestroy(
+    brick: Brick,
+    color: number,
+    opts: { dropPowerUp: boolean; heavyFx: boolean },
+  ): void {
+    const wasX = brick.brickType === 'indestructible';
+    if (!wasX) {
+      this.destructibleRemaining = Math.max(0, this.destructibleRemaining - 1);
+      this.addScore(SCORE_PER_BREAK);
+    } else {
+      this.addScore(SCORE_PER_X_BREAK);
+    }
+
+    this.sfx.brickBreak();
+    this.breakEmitter.setParticleTint(color);
+    this.breakEmitter.explode(opts.heavyFx ? 18 : 12, brick.x, brick.y);
+    this.boardFx.crackleAt(brick.x, brick.y);
+    if (!opts.heavyFx) {
+      this.cameras.main.shake(100, 0.004);
+    }
+
+    // Speed ramp on base level speed (SLOW reapplies on top)
+    this.ballSpeed = Math.min(MAX_BALL_SPEED, this.ballSpeed + BALL_SPEED_RAMP);
+    this.syncAllBallSpeeds();
+
+    if (opts.dropPowerUp) {
+      this.maybeDropPowerUp(brick.x, brick.y);
+    }
+    brick.destroy();
   }
 
   private maybeDropPowerUp(x: number, y: number): void {
@@ -1142,12 +1230,22 @@ export class GameScene extends Phaser.Scene {
 
   /** Floating label when a power-up is collected (GLUE / BULLET / …). */
   private showPowerUpToast(label: string, x: number, y: number): void {
+    const color =
+      label === 'GLUE'
+        ? '#26a69a'
+        : label === 'BULLET'
+          ? '#ff7043'
+          : label === 'SLOW'
+            ? '#29b6f6'
+            : label === 'BLAST'
+              ? '#ffc107'
+              : '#ffffff';
     const t = this.add
       .text(x, y, label, {
         fontFamily: 'monospace',
         fontSize: '18px',
         fontStyle: 'bold',
-        color: label === 'GLUE' ? '#26a69a' : label === 'BULLET' ? '#ff7043' : '#ffffff',
+        color,
         stroke: '#000000',
         strokeThickness: 3,
       })

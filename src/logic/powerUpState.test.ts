@@ -83,6 +83,19 @@ describe('applyPowerUp', () => {
     expect(second.refreshed).toBe(true);
     expect(second.state.expiresAt.get('LASER')).toBe(15000);
   });
+
+  it('SLOW sets slow flag', () => {
+    const r = applyPowerUp(createPowerUpState(3), 'SLOW', 0, 8000);
+    expect(r.state.slow).toBe(true);
+    expect(r.state.active.has('SLOW')).toBe(true);
+    expect(r.state.expiresAt.get('SLOW')).toBe(8000);
+  });
+
+  it('EXPLODE sets explode flag', () => {
+    const r = applyPowerUp(createPowerUpState(3), 'EXPLODE', 0, 9000);
+    expect(r.state.explode).toBe(true);
+    expect(r.state.active.has('EXPLODE')).toBe(true);
+  });
 });
 
 describe('laserMuzzleXs', () => {
@@ -123,6 +136,8 @@ describe('resetPowerUpState', () => {
     expect(s.sticky).toBe(false);
     expect(s.fireball).toBe(false);
     expect(s.laser).toBe(false);
+    expect(s.slow).toBe(false);
+    expect(s.explode).toBe(false);
     expect(s.lives).toBe(5);
   });
 });

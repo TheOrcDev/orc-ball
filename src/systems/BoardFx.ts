@@ -33,6 +33,9 @@ export class BoardFx {
     fireball: false,
     expand: false,
     shrink: false,
+    laser: false,
+    slow: false,
+    explode: false,
   };
 
   constructor(scene: Phaser.Scene) {
@@ -80,6 +83,9 @@ export class BoardFx {
       fireball: flags.fireball,
       expand: flags.expand,
       shrink: flags.shrink,
+      laser: Boolean(flags.laser),
+      slow: Boolean(flags.slow),
+      explode: Boolean(flags.explode),
     };
     if (flags.multiPulse) {
       this.multiPulseUntil = nowMs + 900;

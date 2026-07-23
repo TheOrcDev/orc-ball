@@ -2,9 +2,11 @@ import Phaser from 'phaser';
 import {
   COLORS,
   POWERUP_DURATION_BULLET_MS,
+  POWERUP_DURATION_EXPLODE_MS,
   POWERUP_DURATION_GLUE_MS,
   POWERUP_DURATION_LASER_MS,
   POWERUP_DURATION_MS,
+  POWERUP_DURATION_SLOW_MS,
 } from '../config';
 import type { PowerUpType } from '../data/types';
 import {
@@ -31,8 +33,12 @@ export type PowerUpHooks = {
     expand: boolean;
     shrink: boolean;
     laser: boolean;
+    slow: boolean;
+    explode: boolean;
   }) => void;
   onMultiballVisual?: () => void;
+  /** Sync ball speeds after SLOW is applied / cleared. */
+  onSlowChanged?: (slow: boolean) => void;
 };
 
 /**
@@ -80,6 +86,14 @@ export class PowerUpManager {
     return this.state.laser;
   }
 
+  get isSlow(): boolean {
+    return this.state.slow;
+  }
+
+  get isExplode(): boolean {
+    return this.state.explode;
+  }
+
   get paddleScale(): number {
     return this.state.paddleScale;
   }
@@ -92,6 +106,8 @@ export class PowerUpManager {
     if (type === 'STICKY') return POWERUP_DURATION_GLUE_MS;
     if (type === 'FIREBALL') return POWERUP_DURATION_BULLET_MS;
     if (type === 'LASER') return POWERUP_DURATION_LASER_MS;
+    if (type === 'SLOW') return POWERUP_DURATION_SLOW_MS;
+    if (type === 'EXPLODE') return POWERUP_DURATION_EXPLODE_MS;
     return POWERUP_DURATION_MS;
   }
 
@@ -146,6 +162,14 @@ export class PowerUpManager {
       this.paddle.setLaserLook(true);
       this.scheduleTimed('LASER', duration);
       this.emitEffects();
+    } else if (type === 'SLOW') {
+      this.scheduleTimed('SLOW', duration);
+      this.hooks.onSlowChanged?.(true);
+      this.emitEffects();
+    } else if (type === 'EXPLODE') {
+      this.applyExplodeToAll(true);
+      this.scheduleTimed('EXPLODE', duration);
+      this.emitEffects();
     }
   }
 
@@ -164,6 +188,8 @@ export class PowerUpManager {
       expand: this.state.active.has('EXPAND'),
       shrink: this.state.active.has('SHRINK'),
       laser: this.state.laser,
+      slow: this.state.slow,
+      explode: this.state.explode,
     });
   }
 
@@ -211,6 +237,16 @@ export class PowerUpManager {
       this.paddle.setLaserLook(false);
       this.emitEffects();
     }
+    if (effect === 'SLOW') {
+      this.state.slow = false;
+      this.hooks.onSlowChanged?.(false);
+      this.emitEffects();
+    }
+    if (effect === 'EXPLODE') {
+      this.state.explode = false;
+      this.applyExplodeToAll(false);
+      this.emitEffects();
+    }
   }
 
   applyFireballToAll(active: boolean): void {
@@ -219,9 +255,16 @@ export class PowerUpManager {
     }
   }
 
-  /** Apply fireball tint to a newly spawned ball if effect is active. */
+  applyExplodeToAll(active: boolean): void {
+    for (const ball of this.getBalls()) {
+      if (ball.active) ball.setExplosive(active);
+    }
+  }
+
+  /** Apply active ball effects to a newly spawned ball. */
   decorateNewBall(ball: Ball): void {
     if (this.state.fireball) ball.setFireball(true);
+    if (this.state.explode) ball.setExplosive(true);
   }
 
   reset(): void {
@@ -234,6 +277,8 @@ export class PowerUpManager {
     this.paddle.setLaserLook(false);
     this.paddle.clearTint();
     this.applyFireballToAll(false);
+    this.applyExplodeToAll(false);
+    this.hooks.onSlowChanged?.(false);
     this.emitEffects();
   }
 

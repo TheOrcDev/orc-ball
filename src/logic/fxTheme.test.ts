@@ -39,6 +39,14 @@ describe('resolveFxThemeId', () => {
     expect(resolveFxThemeId({ ...none, shrink: true })).toBe('shrink');
     expect(resolveFxThemeId({ ...none, multiPulse: true })).toBe('multi');
   });
+
+  it('maps slow and explode; explode beats fireball', () => {
+    expect(resolveFxThemeId({ ...none, slow: true })).toBe('slow');
+    expect(resolveFxThemeId({ ...none, explode: true })).toBe('explode');
+    expect(
+      resolveFxThemeId({ ...none, explode: true, fireball: true }),
+    ).toBe('explode');
+  });
 });
 
 describe('getFxTheme', () => {

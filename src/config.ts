@@ -44,6 +44,10 @@ export const POWERUP_DURATION_MS = 10000;
 export const POWERUP_DURATION_GLUE_MS = 15000;
 export const POWERUP_DURATION_BULLET_MS = 12000;
 export const POWERUP_DURATION_LASER_MS = 12000;
+export const POWERUP_DURATION_SLOW_MS = 12000;
+export const POWERUP_DURATION_EXPLODE_MS = 12000;
+/** While SLOW is active, balls run at this fraction of level speed. */
+export const SLOW_SPEED_FACTOR = 0.55;
 export const DEFAULT_DROP_CHANCE = 0.2;
 
 /** Twin laser shots from paddle ends (LASER power). */
@@ -69,6 +73,9 @@ export const COLORS = {
   laser: 0xff1744,
   laserBeam: 0xff5252,
   fireTint: 0xff6d00,
+  slow: 0x29b6f6,
+  explode: 0xffc107,
+  explodeTint: 0xffab00,
   ui: 0xffffff,
   title: 0x4fc3f7,
 } as const;

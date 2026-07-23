@@ -9,6 +9,8 @@ const DROPS_EASY: Partial<Record<PowerUpType, number>> = {
   FIREBALL: 2,
   EXTRA_LIFE: 2,
   LASER: 2,
+  SLOW: 2,
+  EXPLODE: 2,
 };
 
 const DROPS_MID: Partial<Record<PowerUpType, number>> = {
@@ -19,6 +21,8 @@ const DROPS_MID: Partial<Record<PowerUpType, number>> = {
   FIREBALL: 3,
   EXTRA_LIFE: 1,
   LASER: 3,
+  SLOW: 2,
+  EXPLODE: 3,
 };
 
 const DROPS_HARD: Partial<Record<PowerUpType, number>> = {
@@ -29,6 +33,8 @@ const DROPS_HARD: Partial<Record<PowerUpType, number>> = {
   FIREBALL: 4,
   EXTRA_LIFE: 1,
   LASER: 4,
+  SLOW: 3,
+  EXPLODE: 4,
 };
 
 const DROPS_BRUTAL: Partial<Record<PowerUpType, number>> = {
@@ -39,6 +45,8 @@ const DROPS_BRUTAL: Partial<Record<PowerUpType, number>> = {
   FIREBALL: 5,
   EXTRA_LIFE: 1,
   LASER: 4,
+  SLOW: 3,
+  EXPLODE: 5,
 };
 
 /**

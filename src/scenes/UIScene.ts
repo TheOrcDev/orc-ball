@@ -78,7 +78,9 @@ export class UIScene extends Phaser.Scene {
     if (
       key === 'effectGlue' ||
       key === 'effectBullet' ||
-      key === 'effectLaser'
+      key === 'effectLaser' ||
+      key === 'effectSlow' ||
+      key === 'effectExplode'
     ) {
       this.refreshEffects();
     }
@@ -100,15 +102,21 @@ export class UIScene extends Phaser.Scene {
     const glue = Boolean(this.registry.get('effectGlue'));
     const bullet = Boolean(this.registry.get('effectBullet'));
     const laser = Boolean(this.registry.get('effectLaser'));
+    const slow = Boolean(this.registry.get('effectSlow'));
+    const explode = Boolean(this.registry.get('effectExplode'));
     const parts: string[] = [];
     if (glue) parts.push('GLUE (launch to free)');
     if (bullet) parts.push('BULLET');
     if (laser) parts.push('LASER (SPACE)');
+    if (slow) parts.push('SLOW');
+    if (explode) parts.push('BLAST');
     this.effectsText.setText(parts.join('  ·  '));
-    if (laser) this.effectsText.setColor('#ff5252');
+    if (explode) this.effectsText.setColor('#ffc107');
+    else if (laser) this.effectsText.setColor('#ff5252');
     else if (glue && bullet) this.effectsText.setColor('#ffab40');
     else if (glue) this.effectsText.setColor('#26a69a');
     else if (bullet) this.effectsText.setColor('#ff7043');
+    else if (slow) this.effectsText.setColor('#29b6f6');
     else this.effectsText.setColor('#ffd54f');
   }
 

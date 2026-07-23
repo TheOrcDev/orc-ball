@@ -86,6 +86,8 @@ describe('structural audit of shipped source', () => {
       'FIREBALL',
       'EXTRA_LIFE',
       'LASER',
+      'SLOW',
+      'EXPLODE',
     ]) {
       expect(types).toContain(t);
       expect(pum + readFileSync(join(SRC, 'logic/powerUpState.ts'), 'utf8')).toContain(
