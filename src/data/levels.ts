@@ -226,7 +226,8 @@ export const LEVELS: LevelDef[] = [
       'X2.3333.2X',
       'X2......2X',
       'X22222222X',
-      'XXXXXXXXXX',
+      // Two-cell bottom passage so the ball can enter without fireball
+      'XXXX..XXXX',
     ],
   },
   {

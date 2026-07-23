@@ -72,6 +72,14 @@ describe('authored levels', () => {
     expect(destructible).toBe(bricks.length - xCount);
   });
 
+  it('Ring keeps a bottom passage through the concrete shell', () => {
+    const ring = LEVELS.find((l) => l.name === 'Ring');
+    expect(ring).toBeDefined();
+    const bottom = ring!.rows[ring!.rows.length - 1]!;
+    const passageCells = [...bottom].filter((c) => c === '.').length;
+    expect(passageCells).toBeGreaterThanOrEqual(2);
+  });
+
   it('late levels include X bricks requiring fireball', () => {
     const late = LEVELS.slice(-5);
     const withX = late.filter((l) => l.rows.some((r) => r.includes('X')));
