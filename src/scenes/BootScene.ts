@@ -28,6 +28,11 @@ export class BootScene extends Phaser.Scene {
     super('BootScene');
   }
 
+  preload(): void {
+    // Title / landing art from public/
+    this.load.image('menu-bg', 'orc-ball-landing.jpg');
+  }
+
   create(): void {
     this.generateTextures();
     this.scene.start('MenuScene');
