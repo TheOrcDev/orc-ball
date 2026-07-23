@@ -20,108 +20,52 @@ export class MenuScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.sfx = new Sfx(this);
 
-    // Full-screen retro landing art
+    // Full-screen retro landing art (title + orc ball already in the image)
     if (this.textures.exists('menu-bg')) {
       const bg = this.add.image(WIDTH / 2, HEIGHT / 2, 'menu-bg');
-      // Cover 800×600 playfield (image is 1280×720)
       const scale = Math.max(WIDTH / bg.width, HEIGHT / bg.height);
       bg.setScale(scale).setDepth(0);
     }
-
-    // Bottom scrim so buttons stay readable over the art
-    this.add
-      .rectangle(WIDTH / 2, HEIGHT * 0.78, WIDTH, HEIGHT * 0.48, 0x000000, 0.62)
-      .setDepth(1);
 
     const progress = loadProgress();
     const high = progress.highScore;
     const touch = prefersTouchUi();
     const hasContinue = canContinue(progress);
 
-    // Title is already in the art — small tagline only
+    // Live high score — bottom-right, same corner as the old baked text
     this.add
-      .text(WIDTH / 2, HEIGHT * 0.52, 'DX-Ball Style Breakout', {
+      .text(WIDTH - 14, HEIGHT - 12, `HIGH SCORE ${high}`, {
         fontFamily: 'monospace',
-        fontSize: '15px',
-        color: '#b0bec5',
+        fontSize: '14px',
+        color: '#ffffff',
         stroke: '#000000',
         strokeThickness: 3,
       })
-      .setOrigin(0.5)
-      .setDepth(2);
+      .setOrigin(1, 1)
+      .setDepth(5);
 
-    this.add
-      .text(WIDTH / 2, HEIGHT * 0.575, `High Score: ${high}`, {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#ffd54f',
-        stroke: '#000000',
-        strokeThickness: 4,
-      })
-      .setOrigin(0.5)
-      .setDepth(2);
-
-    if (progress.highestLevel > 0) {
-      this.add
-        .text(
-          WIDTH / 2,
-          HEIGHT * 0.62,
-          `Best level reached: ${progress.highestLevel + 1}`,
-          {
-            fontFamily: 'monospace',
-            fontSize: '13px',
-            color: '#90a4ae',
-            stroke: '#000000',
-            strokeThickness: 3,
-          },
-        )
-        .setOrigin(0.5)
-        .setDepth(2);
-    }
-
-    // Menu buttons lower on the art
-    let y = HEIGHT * 0.69;
+    // Buttons over the dark playfield / near the paddle board area
+    let y = HEIGHT * 0.72;
     if (hasContinue && progress.run) {
       const run = progress.run;
       this.addMenuButton(
         WIDTH / 2,
         y,
-        `Continue  (Lv ${run.level + 1} · ${run.score} pts · ${run.lives}♥)`,
+        `Continue  ·  Lv ${run.level + 1}`,
         () => this.startFromRun(run),
         true,
       );
-      y += 50;
-    }
-
-    this.addMenuButton(
-      WIDTH / 2,
-      y,
-      hasContinue
-        ? 'New Game'
-        : touch
-          ? 'Tap / SPACE — New Game'
-          : 'SPACE — New Game',
-      () => this.startNewGame(),
-      !hasContinue,
-    );
-
-    this.add
-      .text(
+      y += 48;
+      this.addMenuButton(WIDTH / 2, y, 'New Game', () => this.startNewGame(), false);
+    } else {
+      this.addMenuButton(
         WIDTH / 2,
-        HEIGHT * 0.93,
-        touch
-          ? 'Drag move  ·  ESC pause  ·  progress saves'
-          : '←→ move  SPACE serve  ESC menu  ·  progress saves',
-        {
-          fontFamily: 'monospace',
-          fontSize: '11px',
-          color: '#78909c',
-          stroke: '#000000',
-          strokeThickness: 2,
-        },
-      )
-      .setOrigin(0.5)
-      .setDepth(2);
+        y,
+        touch ? 'New Game' : 'New Game',
+        () => this.startNewGame(),
+        true,
+      );
+    }
 
     this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P,ESC');
 
@@ -145,29 +89,31 @@ export class MenuScene extends Phaser.Scene {
       .rectangle(
         x,
         y,
-        Math.min(WIDTH - 40, 420),
-        42,
-        primary ? 0x1565c0 : 0x1a2332,
-        0.92,
+        Math.min(WIDTH - 80, 280),
+        40,
+        primary ? 0x1565c0 : 0x0d1520,
+        0.88,
       )
-      .setStrokeStyle(2, primary ? 0x4fc3f7 : 0x546e7a)
+      .setStrokeStyle(2, primary ? 0x4fc3f7 : 0x4fc3f7, primary ? 0.95 : 0.45)
       .setInteractive({ useHandCursor: true })
-      .setDepth(2);
+      .setDepth(4);
     const text = this.add
       .text(x, y, label, {
         fontFamily: 'monospace',
-        fontSize: primary ? '16px' : '15px',
+        fontSize: '16px',
         color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2,
       })
       .setOrigin(0.5)
-      .setDepth(3);
+      .setDepth(5);
 
     bg.on('pointerover', () => {
-      bg.setFillStyle(primary ? 0x1976d2 : 0x263348, 0.95);
+      bg.setFillStyle(primary ? 0x1976d2 : 0x1a2838, 0.95);
       text.setColor('#4fc3f7');
     });
     bg.on('pointerout', () => {
-      bg.setFillStyle(primary ? 0x1565c0 : 0x1a2332, 0.92);
+      bg.setFillStyle(primary ? 0x1565c0 : 0x0d1520, 0.88);
       text.setColor('#ffffff');
     });
     bg.on('pointerdown', () => {
