@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, HEIGHT, START_LIVES, WIDTH } from '../config';
+import { levelCount } from '../data/levels';
 import { prefersTouchUi } from '../logic/touch';
 import {
   canContinue,
@@ -58,6 +59,20 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(1, 1)
       .setDepth(5);
+
+    // Badge if the player has beaten the full campaign at least once
+    if (progress.highestLevel >= levelCount() - 1) {
+      this.add
+        .text(14, HEIGHT - 12, 'CAMPAIGN CLEARED', {
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          color: '#ffd54f',
+          stroke: '#000000',
+          strokeThickness: 3,
+        })
+        .setOrigin(0, 1)
+        .setDepth(5);
+    }
 
     // Play buttons near the paddle board area
     let y = HEIGHT * 0.72;

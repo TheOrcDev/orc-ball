@@ -83,3 +83,7 @@ export const MUSIC_VOLUME_DEFAULT = 50;
 export const SCORE_PER_HIT = 10;
 export const SCORE_PER_BREAK = 50;
 export const SCORE_PER_X_BREAK = 100;
+/** Bonus for clearing the entire campaign. */
+export const SCORE_VICTORY_CLEAR = 5000;
+/** Per remaining life when the campaign is cleared. */
+export const SCORE_VICTORY_LIFE_BONUS = 1000;

@@ -168,6 +168,14 @@ export class Sfx {
     setTimeout(() => this.blip(1046, 0.15, 'square', 0.08), 300);
   }
 
+  /** Bigger fanfare when the whole campaign is cleared. */
+  victory(): void {
+    const notes = [523, 659, 784, 1046, 784, 1046, 1319];
+    notes.forEach((freq, i) => {
+      setTimeout(() => this.blip(freq, 0.12, 'square', 0.09), i * 90);
+    });
+  }
+
   gameOver(): void {
     this.blip(300, 0.15, 'sawtooth', 0.08, 100);
     setTimeout(() => this.blip(200, 0.2, 'sawtooth', 0.07, 60), 180);

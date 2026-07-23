@@ -18,6 +18,8 @@ import {
   SCORE_PER_BREAK,
   SCORE_PER_HIT,
   SCORE_PER_X_BREAK,
+  SCORE_VICTORY_CLEAR,
+  SCORE_VICTORY_LIFE_BONUS,
   START_LIVES,
   STUCK_AUTO_LAUNCH_MS,
   WIDTH,
@@ -58,6 +60,7 @@ import {
 } from '../systems/ProgressSave';
 import { PowerUpManager } from '../systems/PowerUpManager';
 import { Sfx } from '../systems/Sfx';
+import type { OverlayMode, UIScene } from './UIScene';
 
 interface GameSceneData {
   level?: number;
@@ -1083,20 +1086,42 @@ export class GameScene extends Phaser.Scene {
     }
     this.powerUps.clear(true, true);
 
-    const score = (this.registry.get('score') as number) ?? 0;
+    let score = (this.registry.get('score') as number) ?? 0;
     const lives = (this.registry.get('lives') as number) ?? START_LIVES;
-    saveLevelCleared(this.levelIndex, score, lives);
-    this.registry.set('highScore', loadProgress().highScore);
 
     // Level-clear sting; next level restarts scene → playForLevel picks new track
     Music.playLevelClear(this);
 
     const next = this.levelIndex + 1;
     if (next >= levelCount()) {
-      this.registry.set('uiOverlay', 'victory');
-      this.gameOverFlag = true; // reuse SPACE → menu
+      // Campaign complete — award clear + remaining-lives bonuses, then celebrate
+      const clearBonus = SCORE_VICTORY_CLEAR;
+      const lifeBonus = Math.max(0, lives) * SCORE_VICTORY_LIFE_BONUS;
+      this.registry.set('victoryClearBonus', clearBonus);
+      this.registry.set('victoryLifeBonus', lifeBonus);
+      this.addScore(clearBonus + lifeBonus);
+      score = (this.registry.get('score') as number) ?? score;
+
+      saveLevelCleared(this.levelIndex, score, lives);
+      this.registry.set('highScore', loadProgress().highScore);
+      this.gameOverFlag = true; // SPACE / tap → menu
+      this.sfx.victory();
+      this.setUiOverlay('victory');
     } else {
-      this.registry.set('uiOverlay', 'levelComplete');
+      this.registry.set('victoryClearBonus', 0);
+      this.registry.set('victoryLifeBonus', 0);
+      saveLevelCleared(this.levelIndex, score, lives);
+      this.registry.set('highScore', loadProgress().highScore);
+      this.setUiOverlay('levelComplete');
+    }
+  }
+
+  /** Registry + direct UIScene call so the panel always shows. */
+  private setUiOverlay(mode: OverlayMode): void {
+    this.registry.set('uiOverlay', mode);
+    const ui = this.scene.get('UIScene') as UIScene | null;
+    if (ui && typeof ui.showOverlay === 'function' && ui.sys.settings.active) {
+      ui.showOverlay(mode);
     }
   }
 
@@ -1128,7 +1153,7 @@ export class GameScene extends Phaser.Scene {
     const score = (this.registry.get('score') as number) ?? 0;
     saveGameOver(score, this.levelIndex);
     this.registry.set('highScore', loadProgress().highScore);
-    this.registry.set('uiOverlay', 'gameOver');
+    this.setUiOverlay('gameOver');
   }
 
   update(time: number, delta: number): void {
