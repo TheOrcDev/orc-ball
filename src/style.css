@@ -1,0 +1,7 @@
+/* Intentionally minimal — layout lives in index.html for the black host page */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+}
