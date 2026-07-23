@@ -45,6 +45,14 @@ import { Laser } from '../objects/Laser';
 import { Paddle } from '../objects/Paddle';
 import { PowerUp, POWERUP_LABEL } from '../objects/PowerUp';
 import { BoardFx } from '../systems/BoardFx';
+import {
+  clearRunKeepUnlocks,
+  loadProgress,
+  saveGameOver,
+  saveLevelCleared,
+  saveRun,
+  updateHighScore,
+} from '../systems/ProgressSave';
 import { PowerUpManager } from '../systems/PowerUpManager';
 import { Sfx } from '../systems/Sfx';
 
@@ -594,9 +602,11 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = false;
     this.physics.world.resume();
     this.time.paused = false;
+    clearRunKeepUnlocks();
     this.registry.set('score', 0);
     this.registry.set('lives', START_LIVES);
     this.registry.set('level', 0);
+    this.registry.set('highScore', loadProgress().highScore);
     this.registry.set('uiOverlay', 'none');
     this.registry.set('effectGlue', false);
     this.registry.set('effectBullet', false);
@@ -605,6 +615,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private goToMainMenu(): void {
+    // Checkpoint so Continue works from title
+    const score = (this.registry.get('score') as number) ?? 0;
+    const lives = (this.registry.get('lives') as number) ?? START_LIVES;
+    if (lives > 0 && !this.gameOverFlag) {
+      saveRun(this.levelIndex, score, lives);
+      this.registry.set('highScore', loadProgress().highScore);
+    }
     this.clearPauseMenu();
     this.isPaused = false;
     this.physics.world.resume();
@@ -954,6 +971,10 @@ export class GameScene extends Phaser.Scene {
   private addScore(n: number): void {
     const score = ((this.registry.get('score') as number) ?? 0) + n;
     this.registry.set('score', score);
+    // Lightweight high-score track (full run checkpoint on level clear / menu)
+    if (score % 100 === 0) {
+      updateHighScore(score);
+    }
   }
 
   private onLevelClear(): void {
@@ -970,6 +991,11 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.powerUps.clear(true, true);
+
+    const score = (this.registry.get('score') as number) ?? 0;
+    const lives = (this.registry.get('lives') as number) ?? START_LIVES;
+    saveLevelCleared(this.levelIndex, score, lives);
+    this.registry.set('highScore', loadProgress().highScore);
 
     const next = this.levelIndex + 1;
     if (next >= levelCount()) {
@@ -995,6 +1021,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Checkpoint after each life loss so refresh can continue
+    const score = (this.registry.get('score') as number) ?? 0;
+    saveRun(this.levelIndex, score, lives);
     this.serveBall();
   }
 
@@ -1002,6 +1031,9 @@ export class GameScene extends Phaser.Scene {
     this.gameOverFlag = true;
     this.pausedForOverlay = true;
     this.sfx.gameOver();
+    const score = (this.registry.get('score') as number) ?? 0;
+    saveGameOver(score, this.levelIndex);
+    this.registry.set('highScore', loadProgress().highScore);
     this.registry.set('uiOverlay', 'gameOver');
   }
 

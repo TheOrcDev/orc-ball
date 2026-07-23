@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { COLORS, HEIGHT, HIGH_SCORE_KEY, WIDTH } from '../config';
+import { COLORS, HEIGHT, WIDTH } from '../config';
+import { updateHighScore } from '../systems/ProgressSave';
 
 type OverlayMode = 'none' | 'levelComplete' | 'gameOver' | 'victory';
 
@@ -102,12 +103,8 @@ export class UIScene extends Phaser.Scene {
     const score = (this.registry.get('score') as number) ?? 0;
     const high = (this.registry.get('highScore') as number) ?? 0;
     if (score > high) {
-      this.registry.set('highScore', score);
-      try {
-        localStorage.setItem(HIGH_SCORE_KEY, String(score));
-      } catch {
-        // ignore
-      }
+      const p = updateHighScore(score);
+      this.registry.set('highScore', p.highScore);
     }
   }
 
