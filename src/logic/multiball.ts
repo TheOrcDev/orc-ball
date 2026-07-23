@@ -8,6 +8,29 @@ export function multiballSpawnSlots(
   return Math.max(0, cap - activeCount);
 }
 
+/**
+ * Total new balls when every source ball is multiplied by clonesPerSource,
+ * clamped to remaining cap slots.
+ */
+export function planMultiballSpawns(
+  sourceCount: number,
+  activeCount: number,
+  clonesPerSource = 2,
+  cap: number = MULTIBALL_CAP,
+): number {
+  if (sourceCount <= 0 || clonesPerSource <= 0) return 0;
+  const wanted = sourceCount * clonesPerSource;
+  return Math.min(wanted, multiballSpawnSlots(activeCount, cap));
+}
+
+/** Clones to spawn for one source given remaining global slots. */
+export function clonesForSource(
+  remainingSlots: number,
+  clonesPerSource = 2,
+): number {
+  return Math.max(0, Math.min(clonesPerSource, remainingSlots));
+}
+
 /** Life lost only when no active balls remain. */
 export function shouldLoseLife(activeBallCount: number): boolean {
   return activeBallCount === 0;

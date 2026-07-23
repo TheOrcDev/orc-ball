@@ -30,6 +30,7 @@ import {
 } from '../logic/fireball';
 import { parseLevel } from '../logic/levelParse';
 import {
+  clonesForSource,
   multiballCloneAngles,
   multiballSpawnSlots,
   shouldLoseLife,
@@ -910,30 +911,43 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * MULTIBALL: every existing ball is multiplied (up to 2 clones each),
+   * not just the first — re-collecting multi multiplies the whole swarm.
+   * Respects MULTIBALL_CAP (12).
+   */
   private spawnMultiball(): void {
-    const active = (this.balls.getChildren() as Ball[]).filter(
-      (b) => b.active && !b.stuckToPaddle,
+    // Snapshot sources so we don't multiply newly spawned clones in this pass
+    const sources = (this.balls.getChildren() as Ball[]).filter(
+      (b) => b.active,
     );
-    const source =
-      active[0] ??
-      (this.balls.getChildren() as Ball[]).find((b) => b.active);
-    if (!source) return;
+    if (sources.length === 0) return;
 
-    const slots = multiballSpawnSlots(this.balls.countActive(true));
-    if (slots <= 0) return;
+    for (const source of sources) {
+      const slots = multiballSpawnSlots(this.balls.countActive(true));
+      if (slots <= 0) break;
 
-    const body = source.body as Phaser.Physics.Arcade.Body;
-    const angle = velocityAngleDeg(body.velocity.x, body.velocity.y);
-    const cloneCount = Math.min(2, slots);
-    const angles = multiballCloneAngles(angle, cloneCount);
+      const cloneCount = clonesForSource(slots, 2);
+      if (cloneCount <= 0) break;
 
-    for (const a of angles) {
-      if (this.balls.countActive(true) >= MULTIBALL_CAP) break;
-      const { vx, vy } = velocityFromAngle(a, source.speed);
-      const nb = this.createBall(source.x, source.y);
-      nb.speed = source.speed;
-      nb.launchWithVelocity(vx, vy);
-      this.powerUpManager.decorateNewBall(nb);
+      let baseAngle: number;
+      if (source.stuckToPaddle) {
+        // Stuck serve: fan clones upward from paddle
+        baseAngle = -90;
+      } else {
+        const body = source.body as Phaser.Physics.Arcade.Body;
+        baseAngle = velocityAngleDeg(body.velocity.x, body.velocity.y);
+      }
+
+      const angles = multiballCloneAngles(baseAngle, cloneCount);
+      for (const a of angles) {
+        if (this.balls.countActive(true) >= MULTIBALL_CAP) return;
+        const { vx, vy } = velocityFromAngle(a, source.speed);
+        const nb = this.createBall(source.x, source.y);
+        nb.speed = source.speed;
+        nb.launchWithVelocity(vx, vy);
+        this.powerUpManager.decorateNewBall(nb);
+      }
     }
   }
 
