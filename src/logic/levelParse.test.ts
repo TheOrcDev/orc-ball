@@ -38,8 +38,19 @@ describe('countDestructible / isLevelClear', () => {
 });
 
 describe('authored levels', () => {
-  it('has at least 20 levels', () => {
-    expect(LEVELS.length).toBeGreaterThanOrEqual(20);
+  it('has at least 25 levels', () => {
+    expect(LEVELS.length).toBeGreaterThanOrEqual(25);
+  });
+
+  it('nightmare finale levels stay beatable (bottom passages)', () => {
+    const nightmare = LEVELS.slice(-5);
+    for (const level of nightmare) {
+      const bottom = level.rows[level.rows.length - 1]!;
+      const openOrBreakable = [...bottom].filter((c) => c !== 'X').length;
+      expect(openOrBreakable).toBeGreaterThan(0);
+      const { destructible } = parseLevel(level);
+      expect(destructible).toBeGreaterThan(0);
+    }
   });
 
   it('each level parses with at least one destructible brick', () => {
