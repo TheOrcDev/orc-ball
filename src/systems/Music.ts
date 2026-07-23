@@ -99,7 +99,6 @@ export class Music {
   private static currentKey: string | null = null;
   private static currentLevelIndex: number | null = null;
   private static currentMenuKey: string | null = null;
-  private static menuVisitIndex = 0;
   private static unlockBound = false;
   private static pendingLoop = true;
 
@@ -128,12 +127,23 @@ export class Music {
     return GAMEPLAY_TRACKS[i]!;
   }
 
-  /** Which title loop plays for a 0-based visit to the main menu. */
-  static trackKeyForMenuVisit(visitIndex: number): string {
-    const i =
-      ((visitIndex % MENU_TRACKS.length) + MENU_TRACKS.length) %
-      MENU_TRACKS.length;
-    return MENU_TRACKS[i]!;
+  /**
+   * Pick a random title-screen loop. Prefer a different track than `excludeKey`
+   * so revisiting the menu usually feels fresh.
+   */
+  static randomMenuTrackKey(excludeKey?: string | null): string {
+    const all = MENU_TRACKS as readonly string[];
+    const pool =
+      excludeKey && all.includes(excludeKey)
+        ? all.filter((k) => k !== excludeKey)
+        : [...all];
+    const i = Math.floor(Math.random() * pool.length);
+    return pool[i] ?? all[0]!;
+  }
+
+  /** @deprecated use randomMenuTrackKey — kept for call-site compatibility. */
+  static trackKeyForMenuVisit(_visitIndex?: number): string {
+    return Music.randomMenuTrackKey();
   }
 
   static setEnabled(on: boolean, scene?: Phaser.Scene): void {
@@ -298,10 +308,9 @@ export class Music {
     Music.ensureAudible(scene);
   }
 
-  /** Title screen loop. */
+  /** Title screen loop — random track each visit. */
   static playMenu(scene: Phaser.Scene): void {
-    const key = Music.trackKeyForMenuVisit(Music.menuVisitIndex);
-    Music.menuVisitIndex += 1;
+    const key = Music.randomMenuTrackKey(Music.currentMenuKey);
     Music.currentLevelIndex = null;
     Music.currentMenuKey = key;
     Music.playKey(scene, key, true);

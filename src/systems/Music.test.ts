@@ -35,20 +35,18 @@ describe('Music.trackKeyForLevel', () => {
   });
 });
 
-describe('Music.trackKeyForMenuVisit', () => {
-  it('rotates through all four title-screen loops', () => {
-    for (const [index, track] of MENU_TRACKS.entries()) {
-      expect(Music.trackKeyForMenuVisit(index)).toBe(track);
+describe('Music.randomMenuTrackKey', () => {
+  it('always returns a known menu track', () => {
+    for (let i = 0; i < 40; i++) {
+      expect(MENU_TRACKS).toContain(Music.randomMenuTrackKey());
     }
-    expect(Music.trackKeyForMenuVisit(MENU_TRACKS.length)).toBe(
-      MENU_TRACKS[0],
-    );
   });
 
-  it('handles negative visit indices safely', () => {
-    expect(Music.trackKeyForMenuVisit(-1)).toBe(
-      MENU_TRACKS[MENU_TRACKS.length - 1],
-    );
+  it('avoids the previous track when others are available', () => {
+    const previous = MENU_TRACKS[0]!;
+    for (let i = 0; i < 30; i++) {
+      expect(Music.randomMenuTrackKey(previous)).not.toBe(previous);
+    }
   });
 });
 

@@ -24,8 +24,8 @@ WAV files are the loop masters; the MP3 files are convenient previews.
 | Level clear | Gem Secured | 128 BPM | 3.750 s | No |
 
 At runtime, the 11 gameplay loops rotate by level index and the four menu
-themes rotate on each visit to the title screen. Danger and level-clear remain
-separate event cues.
+themes are chosen at random on each visit to the title screen. Danger and
+level-clear remain separate event cues.
 
 For gapless browser playback, use the 44.1 kHz, 16-bit WAV masters. MP3
 encoders add delay and padding, so MP3 is not guaranteed to loop without a
