@@ -57,3 +57,50 @@ export function clampPaddleX(
 ): number {
   return Math.max(halfWidth, Math.min(worldWidth - halfWidth, x));
 }
+
+export type CanvasRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  right?: number;
+  bottom?: number;
+};
+
+/** Map a page/client X through the letterboxed canvas to game world X. */
+export function clientXToGameX(
+  clientX: number,
+  canvasRect: CanvasRect,
+  worldWidth: number,
+): number {
+  if (!(canvasRect.width > 0) || !(worldWidth > 0)) return worldWidth / 2;
+  const x = ((clientX - canvasRect.left) / canvasRect.width) * worldWidth;
+  return Math.max(0, Math.min(worldWidth, x));
+}
+
+/** Map a page/client Y through the letterboxed canvas to game world Y. */
+export function clientYToGameY(
+  clientY: number,
+  canvasRect: CanvasRect,
+  worldHeight: number,
+): number {
+  if (!(canvasRect.height > 0) || !(worldHeight > 0)) return worldHeight / 2;
+  const y = ((clientY - canvasRect.top) / canvasRect.height) * worldHeight;
+  return Math.max(0, Math.min(worldHeight, y));
+}
+
+/** True when the client point lies inside the canvas element (not letterbox). */
+export function isClientInCanvas(
+  clientX: number,
+  clientY: number,
+  canvasRect: CanvasRect,
+): boolean {
+  const right = canvasRect.right ?? canvasRect.left + canvasRect.width;
+  const bottom = canvasRect.bottom ?? canvasRect.top + canvasRect.height;
+  return (
+    clientX >= canvasRect.left &&
+    clientX <= right &&
+    clientY >= canvasRect.top &&
+    clientY <= bottom
+  );
+}

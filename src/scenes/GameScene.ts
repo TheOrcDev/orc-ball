@@ -42,7 +42,13 @@ import {
 } from '../logic/multiball';
 import { laserMuzzleXs } from '../logic/powerUpState';
 import { velocityFromAngle } from '../logic/steering';
-import { isTapGesture, prefersTouchUi } from '../logic/touch';
+import {
+  clientXToGameX,
+  clientYToGameY,
+  isClientInCanvas,
+  isTapGesture,
+  prefersTouchUi,
+} from '../logic/touch';
 import { Ball } from '../objects/Ball';
 import { Brick } from '../objects/Brick';
 import { Laser } from '../objects/Laser';
@@ -104,6 +110,17 @@ export class GameScene extends Phaser.Scene {
   private dragOffsetX = 0;
   private ignoreNextPointerUp = false;
   private boardFx!: BoardFx;
+  /**
+   * Document-level touch claimed outside the letterboxed canvas so the black
+   * bars (especially under the game on phones) still steer the paddle.
+   */
+  private externalTouchId: number | null = null;
+  private readonly onDocTouchStart = (e: TouchEvent): void =>
+    this.handleDocTouchStart(e);
+  private readonly onDocTouchMove = (e: TouchEvent): void =>
+    this.handleDocTouchMove(e);
+  private readonly onDocTouchEnd = (e: TouchEvent): void =>
+    this.handleDocTouchEnd(e);
 
   constructor() {
     super('GameScene');
@@ -336,46 +353,147 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', this.onPointerDown, this);
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
+
+    // Full-viewport bridge: letterbox (black bars) is outside the canvas, so
+    // Phaser never sees those touches — map document touches → game X instead.
+    if (this.touchUi && typeof document !== 'undefined') {
+      document.addEventListener('touchstart', this.onDocTouchStart, {
+        passive: false,
+        capture: true,
+      });
+      document.addEventListener('touchmove', this.onDocTouchMove, {
+        passive: false,
+        capture: true,
+      });
+      document.addEventListener('touchend', this.onDocTouchEnd, {
+        passive: false,
+        capture: true,
+      });
+      document.addEventListener('touchcancel', this.onDocTouchEnd, {
+        passive: false,
+        capture: true,
+      });
+    }
+
     this.events.on('shutdown', () => {
       this.input.off('pointerdown', this.onPointerDown, this);
       this.input.off('pointermove', this.onPointerMove, this);
       this.input.off('pointerup', this.onPointerUp, this);
+      this.teardownExternalTouchBridge();
     });
   }
 
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+  private teardownExternalTouchBridge(): void {
+    if (typeof document === 'undefined') return;
+    document.removeEventListener('touchstart', this.onDocTouchStart, true);
+    document.removeEventListener('touchmove', this.onDocTouchMove, true);
+    document.removeEventListener('touchend', this.onDocTouchEnd, true);
+    document.removeEventListener('touchcancel', this.onDocTouchEnd, true);
+    this.externalTouchId = null;
+  }
+
+  private canvasClientRect(): DOMRect {
+    return this.game.canvas.getBoundingClientRect();
+  }
+
+  private mapClientToGame(
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } {
+    const rect = this.canvasClientRect();
+    return {
+      x: clientXToGameX(clientX, rect, WIDTH),
+      y: clientYToGameY(clientY, rect, HEIGHT),
+    };
+  }
+
+  /**
+   * Touches that start in the black letterbox (outside canvas) are claimed here.
+   * Touches on the canvas stay with Phaser so LAUNCH / UI still work.
+   */
+  private handleDocTouchStart(e: TouchEvent): void {
+    if (!this.sys.isActive() || !this.touchUi) return;
+    if (this.externalTouchId !== null) return;
+
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const rect = this.canvasClientRect();
+    const inside = isClientInCanvas(t.clientX, t.clientY, rect);
+
     if (this.pausedForOverlay) {
-      this.handleOverlaySpace();
+      // Allow dismiss from the letterbox as well as the board
+      if (!inside) {
+        e.preventDefault();
+        this.handleOverlaySpace();
+      }
       return;
     }
     if (this.isPaused) return;
-    // Launch button handles its own press
-    if (this.isPointerOnLaunchBtn(pointer)) return;
+    // Inside canvas → Phaser pointer path (LAUNCH button, in-board drag)
+    if (inside) return;
 
-    this.pointerDownAt = this.time.now;
-    this.pointerDownX = pointer.x;
-    this.pointerDownY = pointer.y;
-    this.pointerDragging = false;
-    // Keep finger free of the paddle: follow X with the grab offset
-    this.dragOffsetX = this.paddle.x - pointer.x;
-    this.paddle.setPointerTargetX(pointer.x + this.dragOffsetX);
+    e.preventDefault();
+    this.externalTouchId = t.identifier;
+    const { x, y } = this.mapClientToGame(t.clientX, t.clientY);
+    this.beginPointerSteer(x, y);
   }
 
-  private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.isDown || this.pausedForOverlay || this.isPaused) return;
-    if (this.isPointerOnLaunchBtn(pointer) && !this.paddle.hasPointerTarget) {
+  private handleDocTouchMove(e: TouchEvent): void {
+    if (this.externalTouchId === null || !this.sys.isActive()) return;
+    const t = this.findTouch(e.touches, this.externalTouchId);
+    if (!t) return;
+    e.preventDefault();
+    if (this.pausedForOverlay || this.isPaused) return;
+    const { x, y } = this.mapClientToGame(t.clientX, t.clientY);
+    this.movePointerSteer(x, y);
+  }
+
+  private handleDocTouchEnd(e: TouchEvent): void {
+    if (this.externalTouchId === null) return;
+    const t = this.findTouch(e.changedTouches, this.externalTouchId);
+    if (!t) return;
+    e.preventDefault();
+    this.externalTouchId = null;
+    const { x, y } = this.mapClientToGame(t.clientX, t.clientY);
+    this.endPointerSteer(x, y);
+  }
+
+  private findTouch(
+    list: TouchList,
+    id: number,
+  ): Touch | null {
+    for (let i = 0; i < list.length; i++) {
+      const t = list.item(i);
+      if (t && t.identifier === id) return t;
+    }
+    return null;
+  }
+
+  private beginPointerSteer(gameX: number, gameY: number): void {
+    if (this.isGamePointOnLaunchBtn(gameX, gameY)) return;
+
+    this.pointerDownAt = this.time.now;
+    this.pointerDownX = gameX;
+    this.pointerDownY = gameY;
+    this.pointerDragging = false;
+    // Keep finger free of the paddle: follow X with the grab offset
+    this.dragOffsetX = this.paddle.x - gameX;
+    this.paddle.setPointerTargetX(gameX + this.dragOffsetX);
+  }
+
+  private movePointerSteer(gameX: number, gameY: number): void {
+    if (this.isGamePointOnLaunchBtn(gameX, gameY) && !this.paddle.hasPointerTarget) {
       return;
     }
     if (
-      Math.hypot(pointer.x - this.pointerDownX, pointer.y - this.pointerDownY) >
-      12
+      Math.hypot(gameX - this.pointerDownX, gameY - this.pointerDownY) > 12
     ) {
       this.pointerDragging = true;
     }
-    this.paddle.setPointerTargetX(pointer.x + this.dragOffsetX);
+    this.paddle.setPointerTargetX(gameX + this.dragOffsetX);
   }
 
-  private onPointerUp(pointer: Phaser.Input.Pointer): void {
+  private endPointerSteer(gameX: number, gameY: number): void {
     if (this.ignoreNextPointerUp) {
       this.ignoreNextPointerUp = false;
       this.paddle.setPointerTargetX(null);
@@ -389,7 +507,7 @@ export class GameScene extends Phaser.Scene {
     const wasDrag = this.pointerDragging;
     this.paddle.setPointerTargetX(null);
 
-    if (this.isPointerOnLaunchBtn(pointer)) return;
+    if (this.isGamePointOnLaunchBtn(gameX, gameY)) return;
 
     const duration = this.time.now - this.pointerDownAt;
     if (
@@ -397,8 +515,8 @@ export class GameScene extends Phaser.Scene {
       isTapGesture(
         this.pointerDownX,
         this.pointerDownY,
-        pointer.x,
-        pointer.y,
+        gameX,
+        gameY,
         duration,
       )
     ) {
@@ -406,10 +524,32 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private isPointerOnLaunchBtn(pointer: Phaser.Input.Pointer): boolean {
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.pausedForOverlay) {
+      this.handleOverlaySpace();
+      return;
+    }
+    if (this.isPaused) return;
+    // External bridge owns this finger when it started in the letterbox
+    if (this.externalTouchId !== null) return;
+    this.beginPointerSteer(pointer.x, pointer.y);
+  }
+
+  private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!pointer.isDown || this.pausedForOverlay || this.isPaused) return;
+    if (this.externalTouchId !== null) return;
+    this.movePointerSteer(pointer.x, pointer.y);
+  }
+
+  private onPointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.externalTouchId !== null) return;
+    this.endPointerSteer(pointer.x, pointer.y);
+  }
+
+  private isGamePointOnLaunchBtn(gameX: number, gameY: number): boolean {
     if (!this.launchBtn) return false;
     const b = this.launchBtn.getBounds();
-    return b.contains(pointer.x, pointer.y);
+    return b.contains(gameX, gameY);
   }
 
   private createTouchChrome(): void {
