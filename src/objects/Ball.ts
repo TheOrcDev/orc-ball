@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
-import { BALL_RADIUS, COLORS, DEFAULT_BALL_SPEED } from '../config';
-import { normalizeSpeedWithMinAxes } from '../logic/velocity';
 import {
-  paddleHitAngle,
-  velocityFromAngle,
-} from '../logic/steering';
+  BALL_RADIUS,
+  COLORS,
+  DEFAULT_BALL_SPEED,
+  PADDLE_VELOCITY_TRANSFER,
+  STEER_MAX_DEG,
+} from '../config';
+import { normalizeSpeedWithMinAxes } from '../logic/velocity';
+import { paddleHitVelocity } from '../logic/steering';
 
 export class Ball extends Phaser.Physics.Arcade.Image {
   speed = DEFAULT_BALL_SPEED;
@@ -12,6 +15,8 @@ export class Ball extends Phaser.Physics.Arcade.Image {
   stuckToPaddle = false;
   stuckOffsetX = 0;
   stuckSince = 0;
+  /** Timestamp of last steered paddle bounce (cooldown against re-hits). */
+  lastPaddleHitAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'ball');
@@ -20,6 +25,7 @@ export class Ball extends Phaser.Physics.Arcade.Image {
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(BALL_RADIUS);
+    // Bounce is overridden on paddle hits; kept for walls/bricks
     body.setBounce(1, 1);
     body.setCollideWorldBounds(true);
     body.onWorldBounds = true;
@@ -44,22 +50,51 @@ export class Ball extends Phaser.Physics.Arcade.Image {
     this.y = paddleTopY - BALL_RADIUS - 1;
   }
 
-  launchFromPaddle(paddleX: number, paddleDisplayWidth: number): void {
+  launchFromPaddle(
+    paddleX: number,
+    paddleDisplayWidth: number,
+    paddleVelocityX = 0,
+  ): void {
     if (!this.stuckToPaddle) return;
     this.stuckToPaddle = false;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
-    const angle = paddleHitAngle(this.x, paddleX, paddleDisplayWidth);
-    const { vx, vy } = velocityFromAngle(angle, this.speed);
+    const { vx, vy } = paddleHitVelocity(
+      this.x,
+      paddleX,
+      paddleDisplayWidth,
+      this.speed,
+      STEER_MAX_DEG,
+      paddleVelocityX,
+      PADDLE_VELOCITY_TRANSFER,
+    );
     body.setVelocity(vx, vy);
+    this.lastPaddleHitAt = this.scene.time.now;
   }
 
-  applyPaddleHit(paddleX: number, paddleDisplayWidth: number): void {
+  /**
+   * DX-Ball bounce: angle from hit position on paddle (left → left, right → right).
+   * Ignores arcade surface reflection so edge hits always go that direction.
+   */
+  applyPaddleHit(
+    paddleX: number,
+    paddleDisplayWidth: number,
+    paddleVelocityX = 0,
+    now = 0,
+  ): void {
     if (this.stuckToPaddle) return;
-    const angle = paddleHitAngle(this.x, paddleX, paddleDisplayWidth);
-    const { vx, vy } = velocityFromAngle(angle, this.speed);
+    const { vx, vy } = paddleHitVelocity(
+      this.x,
+      paddleX,
+      paddleDisplayWidth,
+      this.speed,
+      STEER_MAX_DEG,
+      paddleVelocityX,
+      PADDLE_VELOCITY_TRANSFER,
+    );
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(vx, vy);
+    this.lastPaddleHitAt = now || this.scene.time.now;
   }
 
   maintainSpeed(): void {

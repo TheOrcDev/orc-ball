@@ -17,7 +17,12 @@ export const DEFAULT_BALL_SPEED = 280;
 export const BALL_SPEED_RAMP = 8; // per brick break
 export const MAX_BALL_SPEED = 420;
 export const MIN_VELOCITY_COMPONENT = 40;
-export const STEER_MAX_DEG = 60;
+/** Max degrees from vertical at paddle edge (±). DX-Ball-style strong side angles. */
+export const STEER_MAX_DEG = 75;
+/** Ignore paddle re-hits within this window (ms) after a steered bounce. */
+export const PADDLE_HIT_COOLDOWN_MS = 120;
+/** Fraction of paddle horizontal velocity blended into the ball on hit. */
+export const PADDLE_VELOCITY_TRANSFER = 0.2;
 export const STUCK_AUTO_LAUNCH_MS = 3000;
 export const MULTIBALL_CAP = 12;
 export const MULTIBALL_SPREAD_DEG = 25;

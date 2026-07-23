@@ -11,6 +11,7 @@ import {
   HEIGHT,
   MAX_BALL_SPEED,
   MULTIBALL_CAP,
+  PADDLE_HIT_COOLDOWN_MS,
   SCORE_PER_BREAK,
   SCORE_PER_HIT,
   SCORE_PER_X_BREAK,
@@ -242,8 +243,13 @@ export class GameScene extends Phaser.Scene {
     const stuck = (this.balls.getChildren() as Ball[]).filter(
       (b) => b.active && b.stuckToPaddle,
     );
+    const paddleBody = this.paddle.body as Phaser.Physics.Arcade.Body;
     for (const ball of stuck) {
-      ball.launchFromPaddle(this.paddle.x, this.paddle.displayWidth);
+      ball.launchFromPaddle(
+        this.paddle.x,
+        this.paddle.displayWidth,
+        paddleBody.velocity.x,
+      );
       this.sfx.paddleHit();
     }
   }
@@ -251,6 +257,10 @@ export class GameScene extends Phaser.Scene {
   /**
    * Phaser group-vs-sprite colliders invoke callbacks as (sprite, groupChild),
    * so collider(balls, paddle) arrives as (paddle, ball) — resolve by type.
+   *
+   * Bounce uses hit position on the paddle (DX-Ball): far left → sharp left
+   * angle, center → straight up, far right → sharp right. Arcade reflection
+   * is overwritten so side hits always go that direction.
    */
   private onBallPaddle: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
     obj1,
@@ -266,24 +276,32 @@ export class GameScene extends Phaser.Scene {
     const { a: ball, b: paddle } = pair;
     if (!ball.active || ball.stuckToPaddle) return;
 
-    const body = ball.body as Phaser.Physics.Arcade.Body | null;
-    // Ignore re-hits while already rising (overlap residual after bounce)
-    if (body && body.velocity.y < 0) return;
+    const now = this.time.now;
+    // Cooldown only — do NOT skip when vy < 0 (arcade bounce flips vy first
+    // and that used to cancel our position-based steering entirely).
+    if (now - ball.lastPaddleHitAt < PADDLE_HIT_COOLDOWN_MS) return;
 
+    const body = ball.body as Phaser.Physics.Arcade.Body | null;
+    const paddleBody = paddle.body as Phaser.Physics.Arcade.Body;
     const paddleTop = paddle.y - paddle.displayHeight / 2;
 
     if (this.powerUpManager.isSticky || paddle.sticky) {
       const offset = ball.x - paddle.x;
-      ball.stickTo(paddle.x, paddleTop, offset, this.time.now);
+      ball.stickTo(paddle.x, paddleTop, offset, now);
       return;
     }
 
-    // Seat ball on top of paddle then steer — prevents resting / re-embed
+    // Seat ball on top of paddle, then set steered velocity from hit offset
     ball.y = paddleTop - BALL_RADIUS - 1;
     if (body) {
       body.y = ball.y - body.halfHeight;
     }
-    ball.applyPaddleHit(paddle.x, paddle.displayWidth);
+    ball.applyPaddleHit(
+      paddle.x,
+      paddle.displayWidth,
+      paddleBody.velocity.x,
+      now,
+    );
     this.sfx.paddleHit();
   };
 
@@ -501,7 +519,12 @@ export class GameScene extends Phaser.Scene {
         this.paddle.y - this.paddle.displayHeight / 2,
       );
       if (time - ball.stuckSince >= STUCK_AUTO_LAUNCH_MS) {
-        ball.launchFromPaddle(this.paddle.x, this.paddle.displayWidth);
+        const paddleBody = this.paddle.body as Phaser.Physics.Arcade.Body;
+        ball.launchFromPaddle(
+          this.paddle.x,
+          this.paddle.displayWidth,
+          paddleBody.velocity.x,
+        );
         this.sfx.paddleHit();
       }
     }
