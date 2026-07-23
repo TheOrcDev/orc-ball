@@ -38,7 +38,7 @@ import { velocityFromAngle } from '../logic/steering';
 import { Ball } from '../objects/Ball';
 import { Brick } from '../objects/Brick';
 import { Paddle } from '../objects/Paddle';
-import { PowerUp } from '../objects/PowerUp';
+import { PowerUp, POWERUP_LABEL } from '../objects/PowerUp';
 import { PowerUpManager } from '../systems/PowerUpManager';
 import { Sfx } from '../systems/Sfx';
 
@@ -107,6 +107,9 @@ export class GameScene extends Phaser.Scene {
       runChildUpdate: false,
     });
 
+    this.registry.set('effectGlue', false);
+    this.registry.set('effectBullet', false);
+
     this.powerUpManager = new PowerUpManager(
       this,
       this.paddle,
@@ -118,6 +121,11 @@ export class GameScene extends Phaser.Scene {
         onExtraLife: () => this.sfx.powerUp(),
         onBonus: () => this.sfx.powerUp(),
         onMalus: () => this.sfx.powerDown(),
+        onStickyExpired: () => this.launchStuckBalls(),
+        onEffectsChanged: ({ sticky, fireball }) => {
+          this.registry.set('effectGlue', sticky);
+          this.registry.set('effectBullet', fireball);
+        },
       },
     );
 
@@ -132,11 +140,12 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.fireTrailEmitter = this.add.particles(0, 0, 'particle', {
-      speed: { min: 10, max: 40 },
-      lifespan: 200,
-      scale: { start: 0.6, end: 0 },
-      tint: COLORS.fireTint,
-      frequency: 40,
+      speed: { min: 20, max: 70 },
+      lifespan: 280,
+      scale: { start: 0.9, end: 0 },
+      tint: [COLORS.fireTint, 0xffab40, 0xff3d00],
+      frequency: 24,
+      quantity: 2,
       follow: undefined,
       emitting: false,
     });
@@ -285,9 +294,11 @@ export class GameScene extends Phaser.Scene {
     const paddleBody = paddle.body as Phaser.Physics.Arcade.Body;
     const paddleTop = paddle.y - paddle.displayHeight / 2;
 
+    // GLUE (sticky): ball sticks until SPACE — no auto-bounce
     if (this.powerUpManager.isSticky || paddle.sticky) {
       const offset = ball.x - paddle.x;
       ball.stickTo(paddle.x, paddleTop, offset, now);
+      ball.lastPaddleHitAt = now;
       return;
     }
 
@@ -414,9 +425,33 @@ export class GameScene extends Phaser.Scene {
             : null;
       if (!power || !power.active) return;
       const type = power.powerType as PowerUpType;
+      const label = POWERUP_LABEL[type];
       this.powerUpManager.collect(type);
+      this.showPowerUpToast(label, power.x, power.y);
       power.destroy();
     };
+
+  /** Floating label when a power-up is collected (GLUE / BULLET / …). */
+  private showPowerUpToast(label: string, x: number, y: number): void {
+    const t = this.add
+      .text(x, y, label, {
+        fontFamily: 'monospace',
+        fontSize: '18px',
+        fontStyle: 'bold',
+        color: label === 'GLUE' ? '#26a69a' : label === 'BULLET' ? '#ff7043' : '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+    this.tweens.add({
+      targets: t,
+      y: y - 40,
+      alpha: 0,
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onComplete: () => t.destroy(),
+    });
+  }
 
   private spawnMultiball(): void {
     const active = (this.balls.getChildren() as Ball[]).filter(
@@ -509,16 +544,21 @@ export class GameScene extends Phaser.Scene {
 
     this.paddle.update(time, delta);
 
-    // Stuck balls follow paddle + auto-launch
+    // Stuck balls follow paddle. Auto-launch only when NOT under GLUE
+    // (glue requires SPACE). Initial serve also auto-launches after timeout.
     const stuck = (this.balls.getChildren() as Ball[]).filter(
       (b) => b.active && b.stuckToPaddle,
     );
+    const glueActive = this.powerUpManager.isSticky;
     for (const ball of stuck) {
       ball.followPaddle(
         this.paddle.x,
         this.paddle.y - this.paddle.displayHeight / 2,
       );
-      if (time - ball.stuckSince >= STUCK_AUTO_LAUNCH_MS) {
+      if (
+        !glueActive &&
+        time - ball.stuckSince >= STUCK_AUTO_LAUNCH_MS
+      ) {
         const paddleBody = this.paddle.body as Phaser.Physics.Arcade.Body;
         ball.launchFromPaddle(
           this.paddle.x,

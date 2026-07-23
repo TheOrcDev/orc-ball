@@ -34,9 +34,12 @@ export const BRICK_HEIGHT = 32;
 export const BRICK_GAP = 2;
 export const BRICK_GRID_TOP = 80;
 
-export const POWERUP_SIZE = 24;
+export const POWERUP_SIZE = 28;
 export const POWERUP_FALL_SPEED = 150;
 export const POWERUP_DURATION_MS = 10000;
+/** Glue / bullet last a bit longer so they feel impactful. */
+export const POWERUP_DURATION_GLUE_MS = 15000;
+export const POWERUP_DURATION_BULLET_MS = 12000;
 export const DEFAULT_DROP_CHANCE = 0.2;
 
 export const COLORS = {

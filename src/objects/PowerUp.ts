@@ -20,6 +20,25 @@ export const POWERUP_COLOR: Record<PowerUpType, number> = {
   EXTRA_LIFE: COLORS.extraLife,
 };
 
+/** Player-facing names (STICKY = Glue, FIREBALL = Bullet). */
+export const POWERUP_LABEL: Record<PowerUpType, string> = {
+  EXPAND: 'EXPAND',
+  SHRINK: 'SHRINK',
+  MULTIBALL: 'MULTI',
+  STICKY: 'GLUE',
+  FIREBALL: 'BULLET',
+  EXTRA_LIFE: 'LIFE',
+};
+
+export const POWERUP_LETTER: Record<PowerUpType, string> = {
+  EXPAND: 'E',
+  SHRINK: 'S',
+  MULTIBALL: 'M',
+  STICKY: 'G',
+  FIREBALL: 'B',
+  EXTRA_LIFE: 'L',
+};
+
 export class PowerUp extends Phaser.Physics.Arcade.Image {
   powerType: PowerUpType = 'EXPAND';
 

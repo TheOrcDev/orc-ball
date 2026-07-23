@@ -43,12 +43,25 @@ export class MenuScene extends Phaser.Scene {
     this.add
       .text(
         WIDTH / 2,
-        HEIGHT * 0.65,
-        '← → / A D  move    SPACE  serve',
+        HEIGHT * 0.62,
+        '← → / A D  move    SPACE  serve / launch',
         {
           fontFamily: 'monospace',
           fontSize: '14px',
           color: '#78909c',
+        },
+      )
+      .setOrigin(0.5);
+
+    this.add
+      .text(
+        WIDTH / 2,
+        HEIGHT * 0.69,
+        'G = GLUE (stick + SPACE)   B = BULLET (through bricks)',
+        {
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          color: '#546e7a',
         },
       )
       .setOrigin(0.5);

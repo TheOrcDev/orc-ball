@@ -10,7 +10,7 @@ import {
   POWERUP_SIZE,
 } from '../config';
 import type { PowerUpType } from '../data/types';
-import { POWERUP_COLOR } from '../objects/PowerUp';
+import { POWERUP_COLOR, POWERUP_LETTER } from '../objects/PowerUp';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -53,7 +53,7 @@ export class BootScene extends Phaser.Scene {
     partG.generateTexture('particle', 8, 8);
     partG.destroy();
 
-    // Power-up squares with letter marks
+    // Power-up squares with letter (G=Glue, B=Bullet, …)
     const types: PowerUpType[] = [
       'EXPAND',
       'SHRINK',
@@ -77,14 +77,44 @@ export class BootScene extends Phaser.Scene {
                   ? 'powerup-shrink'
                   : 'powerup-sticky';
 
-      const g = this.make.graphics({ x: 0, y: 0 });
-      const color = POWERUP_COLOR[type];
-      g.fillStyle(color, 1);
-      g.fillRoundedRect(0, 0, POWERUP_SIZE, POWERUP_SIZE, 4);
-      g.lineStyle(2, 0xffffff, 0.5);
-      g.strokeRoundedRect(1, 1, POWERUP_SIZE - 2, POWERUP_SIZE - 2, 4);
-      g.generateTexture(texKey, POWERUP_SIZE, POWERUP_SIZE);
-      g.destroy();
+      this.bakePowerUpTexture(texKey, POWERUP_COLOR[type], POWERUP_LETTER[type]);
     }
+  }
+
+  private bakePowerUpTexture(
+    key: string,
+    color: number,
+    letter: string,
+  ): void {
+    const size = POWERUP_SIZE;
+    const g = this.make.graphics({ x: 0, y: 0 });
+    g.fillStyle(color, 1);
+    g.fillRoundedRect(0, 0, size, size, 5);
+    g.lineStyle(2, 0xffffff, 0.7);
+    g.strokeRoundedRect(1, 1, size - 2, size - 2, 5);
+
+    // make.text takes a config object; add.text uses x,y,string,style
+    const label = this.add
+      .text(size / 2, size / 2, letter, {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+
+    const rt = this.make.renderTexture({
+      x: 0,
+      y: 0,
+      width: size,
+      height: size,
+    });
+    rt.draw(g, 0, 0);
+    rt.draw(label, 0, 0);
+    rt.saveTexture(key);
+    rt.destroy();
+    label.destroy();
+    g.destroy();
   }
 }

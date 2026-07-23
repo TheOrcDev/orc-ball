@@ -7,6 +7,7 @@ export class UIScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private livesText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
+  private effectsText!: Phaser.GameObjects.Text;
   private overlay?: Phaser.GameObjects.Container;
 
   constructor() {
@@ -31,7 +32,17 @@ export class UIScene extends Phaser.Scene {
       .text(WIDTH - 16, 12, 'Level: 1', style)
       .setOrigin(1, 0);
 
+    this.effectsText = this.add
+      .text(WIDTH / 2, 36, '', {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#ffd54f',
+      })
+      .setOrigin(0.5, 0);
+
     this.refreshFromRegistry();
+    this.refreshEffects();
 
     this.registry.events.on('changedata', this.onRegistryChange, this);
 
@@ -53,6 +64,9 @@ export class UIScene extends Phaser.Scene {
     if (key === 'score') {
       this.maybeUpdateHighScore();
     }
+    if (key === 'effectGlue' || key === 'effectBullet') {
+      this.refreshEffects();
+    }
   }
 
   private refreshFromRegistry(): void {
@@ -62,6 +76,19 @@ export class UIScene extends Phaser.Scene {
     this.scoreText.setText(`Score: ${score}`);
     this.livesText.setText(`Lives: ${lives}`);
     this.levelText.setText(`Level: ${level}`);
+  }
+
+  private refreshEffects(): void {
+    const glue = Boolean(this.registry.get('effectGlue'));
+    const bullet = Boolean(this.registry.get('effectBullet'));
+    const parts: string[] = [];
+    if (glue) parts.push('GLUE (SPACE to launch)');
+    if (bullet) parts.push('BULLET');
+    this.effectsText.setText(parts.join('  ·  '));
+    if (glue && bullet) this.effectsText.setColor('#ffab40');
+    else if (glue) this.effectsText.setColor('#26a69a');
+    else if (bullet) this.effectsText.setColor('#ff7043');
+    else this.effectsText.setColor('#ffd54f');
   }
 
   private maybeUpdateHighScore(): void {

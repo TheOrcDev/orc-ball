@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
-import { POWERUP_DURATION_MS } from '../config';
+import {
+  COLORS,
+  POWERUP_DURATION_BULLET_MS,
+  POWERUP_DURATION_GLUE_MS,
+  POWERUP_DURATION_MS,
+} from '../config';
 import type { PowerUpType } from '../data/types';
 import {
   applyPowerUp,
@@ -17,6 +22,9 @@ export type PowerUpHooks = {
   onExtraLife?: () => void;
   onMalus?: () => void;
   onBonus?: () => void;
+  /** Fired when glue (sticky) expires — launch any stuck balls. */
+  onStickyExpired?: () => void;
+  onEffectsChanged?: (effects: { sticky: boolean; fireball: boolean }) => void;
 };
 
 /**
@@ -68,9 +76,16 @@ export class PowerUpManager {
     return this.state;
   }
 
+  private durationFor(type: PowerUpType): number {
+    if (type === 'STICKY') return POWERUP_DURATION_GLUE_MS;
+    if (type === 'FIREBALL') return POWERUP_DURATION_BULLET_MS;
+    return POWERUP_DURATION_MS;
+  }
+
   collect(type: PowerUpType): void {
     const now = this.scene.time.now;
-    const result = applyPowerUp(this.state, type, now, POWERUP_DURATION_MS);
+    const duration = this.durationFor(type);
+    const result = applyPowerUp(this.state, type, now, duration);
     this.state = result.state;
 
     if (type === 'SHRINK') this.hooks.onMalus?.();
@@ -91,26 +106,36 @@ export class PowerUpManager {
     if (type === 'EXPAND') {
       this.clearTimer('SHRINK');
       this.paddle.setWidthScale(this.state.paddleScale);
-      this.scheduleTimed('EXPAND');
+      this.scheduleTimed('EXPAND', duration);
     } else if (type === 'SHRINK') {
       this.clearTimer('EXPAND');
       this.paddle.setWidthScale(this.state.paddleScale);
-      this.scheduleTimed('SHRINK');
+      this.scheduleTimed('SHRINK', duration);
     } else if (type === 'STICKY') {
       this.paddle.sticky = true;
-      this.scheduleTimed('STICKY');
+      this.paddle.setTint(COLORS.sticky);
+      this.scheduleTimed('STICKY', duration);
+      this.emitEffects();
     } else if (type === 'FIREBALL') {
       this.applyFireballToAll(true);
-      this.scheduleTimed('FIREBALL');
+      this.scheduleTimed('FIREBALL', duration);
+      this.emitEffects();
     }
   }
 
-  private scheduleTimed(effect: TimedEffect): void {
+  private scheduleTimed(effect: TimedEffect, durationMs: number): void {
     this.clearTimer(effect);
-    const timer = this.scene.time.delayedCall(POWERUP_DURATION_MS, () => {
+    const timer = this.scene.time.delayedCall(durationMs, () => {
       this.expire(effect);
     });
     this.timers.set(effect, timer);
+  }
+
+  private emitEffects(): void {
+    this.hooks.onEffectsChanged?.({
+      sticky: this.state.sticky,
+      fireball: this.state.fireball,
+    });
   }
 
   private clearTimer(effect: TimedEffect): void {
@@ -135,10 +160,14 @@ export class PowerUpManager {
     if (effect === 'STICKY') {
       this.state.sticky = false;
       this.paddle.sticky = false;
+      this.paddle.clearTint();
+      this.hooks.onStickyExpired?.();
+      this.emitEffects();
     }
     if (effect === 'FIREBALL') {
       this.state.fireball = false;
       this.applyFireballToAll(false);
+      this.emitEffects();
     }
   }
 
@@ -160,7 +189,9 @@ export class PowerUpManager {
     this.state = resetPowerUpState(this.state, true);
     this.paddle.resetWidth();
     this.paddle.sticky = false;
+    this.paddle.clearTint();
     this.applyFireballToAll(false);
+    this.emitEffects();
   }
 
   destroy(): void {

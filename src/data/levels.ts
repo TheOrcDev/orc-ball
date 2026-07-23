@@ -1,17 +1,17 @@
 import type { LevelDef } from './types';
 
-/** 4–6 authored data-driven levels */
+/** 4–6 authored data-driven levels — Glue (STICKY) & Bullet (FIREBALL) weighted up. */
 export const LEVELS: LevelDef[] = [
   {
     name: 'Full Wall',
     ballSpeed: 280,
-    dropChance: 0.22,
+    dropChance: 0.28,
     dropTable: {
       EXPAND: 2,
       SHRINK: 1,
       MULTIBALL: 2,
-      STICKY: 1,
-      FIREBALL: 1,
+      STICKY: 3,
+      FIREBALL: 3,
       EXTRA_LIFE: 1,
     },
     rows: [
@@ -25,13 +25,13 @@ export const LEVELS: LevelDef[] = [
   {
     name: 'Checkerboard',
     ballSpeed: 300,
-    dropChance: 0.25,
+    dropChance: 0.3,
     dropTable: {
       EXPAND: 2,
       SHRINK: 1,
-      MULTIBALL: 3,
-      STICKY: 2,
-      FIREBALL: 1,
+      MULTIBALL: 2,
+      STICKY: 3,
+      FIREBALL: 3,
       EXTRA_LIFE: 1,
     },
     rows: [
@@ -46,13 +46,13 @@ export const LEVELS: LevelDef[] = [
   {
     name: 'Castle',
     ballSpeed: 310,
-    dropChance: 0.28,
+    dropChance: 0.32,
     dropTable: {
       EXPAND: 1,
       SHRINK: 1,
       MULTIBALL: 2,
-      STICKY: 1,
-      FIREBALL: 3,
+      STICKY: 2,
+      FIREBALL: 4,
       EXTRA_LIFE: 1,
     },
     rows: [
@@ -69,13 +69,13 @@ export const LEVELS: LevelDef[] = [
   {
     name: 'Diamond',
     ballSpeed: 320,
-    dropChance: 0.3,
+    dropChance: 0.32,
     dropTable: {
       EXPAND: 2,
       SHRINK: 1,
       MULTIBALL: 2,
-      STICKY: 2,
-      FIREBALL: 2,
+      STICKY: 3,
+      FIREBALL: 3,
       EXTRA_LIFE: 2,
     },
     rows: [
@@ -93,13 +93,13 @@ export const LEVELS: LevelDef[] = [
   {
     name: 'Gauntlet',
     ballSpeed: 340,
-    dropChance: 0.32,
+    dropChance: 0.35,
     dropTable: {
       EXPAND: 1,
       SHRINK: 2,
-      MULTIBALL: 3,
-      STICKY: 1,
-      FIREBALL: 3,
+      MULTIBALL: 2,
+      STICKY: 3,
+      FIREBALL: 4,
       EXTRA_LIFE: 1,
     },
     rows: [
@@ -116,13 +116,13 @@ export const LEVELS: LevelDef[] = [
   {
     name: 'Finale',
     ballSpeed: 360,
-    dropChance: 0.35,
+    dropChance: 0.38,
     dropTable: {
       EXPAND: 2,
       SHRINK: 1,
-      MULTIBALL: 3,
-      STICKY: 2,
-      FIREBALL: 3,
+      MULTIBALL: 2,
+      STICKY: 3,
+      FIREBALL: 4,
       EXTRA_LIFE: 2,
     },
     rows: [
