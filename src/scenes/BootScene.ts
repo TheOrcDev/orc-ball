@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import {
-  BALL_DIAMETER,
   BALL_RADIUS,
   BRICK_HEIGHT,
   BRICK_WIDTH,
@@ -144,17 +143,91 @@ export class BootScene extends Phaser.Scene {
     g.destroy();
   }
 
-  /** Sphere with specular highlight. */
+  /**
+   * Circular orc-face ball — still a sphere for physics, painted green orc.
+   * Drawn larger then used at BALL_DIAMETER for cleaner face detail.
+   */
   private bakeBall(): void {
-    const d = BALL_DIAMETER;
-    const r = BALL_RADIUS;
+    // High-res bake (2×) then game uses BALL_DIAMETER display size
+    const scale = 2;
+    const r = BALL_RADIUS * scale;
+    const d = r * 2;
     const g = this.make.graphics({ x: 0, y: 0 });
-    g.fillStyle(0xe8eaf6, 1);
-    g.fillCircle(r, r, r);
-    g.fillStyle(0xffffff, 0.85);
-    g.fillCircle(r - 2, r - 2, r * 0.35);
-    g.fillStyle(0x90a4ae, 0.35);
-    g.fillCircle(r + 2, r + 3, r * 0.45);
+    const cx = r;
+    const cy = r;
+
+    // Sphere base — orc green
+    g.fillStyle(0x4caf50, 1);
+    g.fillCircle(cx, cy, r);
+    // Soft shading (still round)
+    g.fillStyle(0x2e7d32, 0.45);
+    g.fillCircle(cx + r * 0.2, cy + r * 0.25, r * 0.72);
+    g.fillStyle(0x81c784, 0.5);
+    g.fillCircle(cx - r * 0.28, cy - r * 0.3, r * 0.38);
+
+    // Brow ridge
+    g.fillStyle(0x388e3c, 1);
+    g.fillEllipse(cx, cy - r * 0.22, r * 1.15, r * 0.35);
+
+    // Eyes (red, angry)
+    g.fillStyle(0x1b5e20, 1);
+    g.fillEllipse(cx - r * 0.32, cy - r * 0.12, r * 0.38, r * 0.28);
+    g.fillEllipse(cx + r * 0.32, cy - r * 0.12, r * 0.38, r * 0.28);
+    g.fillStyle(0xff1744, 1);
+    g.fillCircle(cx - r * 0.3, cy - r * 0.1, r * 0.14);
+    g.fillCircle(cx + r * 0.3, cy - r * 0.1, r * 0.14);
+    g.fillStyle(0xfff176, 1);
+    g.fillCircle(cx - r * 0.28, cy - r * 0.12, r * 0.05);
+    g.fillCircle(cx + r * 0.32, cy - r * 0.12, r * 0.05);
+
+    // Nose / snout
+    g.fillStyle(0x66bb6a, 1);
+    g.fillEllipse(cx, cy + r * 0.12, r * 0.45, r * 0.32);
+    g.fillStyle(0x1b5e20, 0.7);
+    g.fillCircle(cx - r * 0.1, cy + r * 0.12, r * 0.06);
+    g.fillCircle(cx + r * 0.1, cy + r * 0.12, r * 0.06);
+
+    // Mouth snarl
+    g.fillStyle(0x1b5e20, 1);
+    g.fillEllipse(cx, cy + r * 0.38, r * 0.55, r * 0.22);
+    g.fillStyle(0x000000, 0.55);
+    g.fillEllipse(cx, cy + r * 0.4, r * 0.4, r * 0.1);
+
+    // Tusks (white, sticking up from lower jaw — stay inside the circle)
+    g.fillStyle(0xfafafa, 1);
+    g.fillTriangle(
+      cx - r * 0.28,
+      cy + r * 0.42,
+      cx - r * 0.14,
+      cy + r * 0.42,
+      cx - r * 0.22,
+      cy + r * 0.12,
+    );
+    g.fillTriangle(
+      cx + r * 0.14,
+      cy + r * 0.42,
+      cx + r * 0.28,
+      cy + r * 0.42,
+      cx + r * 0.22,
+      cy + r * 0.12,
+    );
+    g.fillStyle(0xcfd8dc, 1);
+    g.fillCircle(cx - r * 0.22, cy + r * 0.18, r * 0.06);
+    g.fillCircle(cx + r * 0.22, cy + r * 0.18, r * 0.06);
+
+    // Ear nubs on sides (clipped by round silhouette feel)
+    g.fillStyle(0x43a047, 1);
+    g.fillEllipse(cx - r * 0.78, cy - r * 0.05, r * 0.28, r * 0.35);
+    g.fillEllipse(cx + r * 0.78, cy - r * 0.05, r * 0.28, r * 0.35);
+
+    // Specular glint (keeps “ball” read)
+    g.fillStyle(0xffffff, 0.35);
+    g.fillCircle(cx - r * 0.35, cy - r * 0.4, r * 0.18);
+
+    // Circular mask edge (dark rim)
+    g.lineStyle(Math.max(1, scale), 0x1b5e20, 0.85);
+    g.strokeCircle(cx, cy, r - 0.5);
+
     g.generateTexture('ball', d, d);
     g.destroy();
   }

@@ -11,7 +11,8 @@ export const PADDLE_SCALE_SHRINK = 0.6;
 export const PADDLE_SCALE_NORMAL = 1;
 export const PADDLE_SCALE_EXPAND = 1.5;
 
-export const BALL_RADIUS = 8;
+/** Slightly larger so the orc face stays readable as a ball. */
+export const BALL_RADIUS = 10;
 export const BALL_DIAMETER = BALL_RADIUS * 2;
 export const DEFAULT_BALL_SPEED = 280;
 export const BALL_SPEED_RAMP = 8; // per brick break
