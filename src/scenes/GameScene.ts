@@ -87,6 +87,8 @@ export class GameScene extends Phaser.Scene {
   private isPaused = false;
   private pauseOverlay?: Phaser.GameObjects.Container;
   private soundMenuLabel?: Phaser.GameObjects.Text;
+  private musicMenuLabel?: Phaser.GameObjects.Text;
+  private musicVolLabel?: Phaser.GameObjects.Text;
   /** Touch / small-screen chrome (LAUNCH button + hints). */
   private touchUi = false;
   private launchBtn?: Phaser.GameObjects.Container;
@@ -139,8 +141,8 @@ export class GameScene extends Phaser.Scene {
 
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
-    // In-game BGM (Binary Eagle) — respects mute
-    Music.playGame(this);
+    // Fresh soundtrack for this level (rotates tracks by level index)
+    Music.playForLevel(this, this.levelIndex);
 
     this.boardFx = new BoardFx(this);
 
@@ -497,21 +499,24 @@ export class GameScene extends Phaser.Scene {
     Music.resume(this);
   }
 
-  /** Full pause menu: resume, new game, sound, main menu. */
+  /**
+   * In-game pause menu (ESC / P) — not the title landing screen.
+   * Resume, new game, SFX, music on/off + volume %, main menu.
+   */
   private showPauseMenu(): void {
     this.clearPauseMenu();
     const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(2000);
 
     const dim = this.add
       .rectangle(0, 0, WIDTH + 4, HEIGHT + 4, 0x000000, 0.55)
-      .setInteractive(); // block clicks through to game
+      .setInteractive();
 
     const panel = this.add
-      .rectangle(0, 0, 320, 300, 0x0a0a14, 0.94)
+      .rectangle(0, 0, 340, 400, 0x0a0a14, 0.94)
       .setStrokeStyle(2, COLORS.title);
 
     const title = this.add
-      .text(0, -118, 'PAUSED', {
+      .text(0, -168, 'PAUSED', {
         fontFamily: 'monospace',
         fontSize: '32px',
         fontStyle: 'bold',
@@ -520,7 +525,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const hint = this.add
-      .text(0, 128, 'ESC / P to resume', {
+      .text(0, 178, 'ESC / P to resume', {
         fontFamily: 'monospace',
         fontSize: '12px',
         color: '#78909c',
@@ -529,63 +534,111 @@ export class GameScene extends Phaser.Scene {
 
     container.add([dim, panel, title, hint]);
 
-    const soundText = () => (Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON');
-
-    const items: { label: string; onClick: () => void; y: number }[] = [
-      {
-        label: 'Resume',
-        y: -80,
-        onClick: () => this.resumeGame(),
-      },
-      {
-        label: 'New Game',
-        y: -30,
-        onClick: () => this.startNewGame(),
-      },
-      {
-        label: soundText(),
-        y: 30,
-        onClick: () => {
+    // Resume
+    {
+      const btn = this.makePauseButton('Resume', -118, () => this.resumeGame());
+      container.add([btn.bg, btn.text]);
+    }
+    // New Game
+    {
+      const btn = this.makePauseButton('New Game', -68, () =>
+        this.startNewGame(),
+      );
+      container.add([btn.bg, btn.text]);
+    }
+    // SFX
+    {
+      const btn = this.makePauseButton(
+        Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON',
+        -18,
+        () => {
           Sfx.toggleMuted();
-          if (this.soundMenuLabel) {
-            this.soundMenuLabel.setText(
-              Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON',
-            );
-          }
+          this.soundMenuLabel?.setText(Sfx.isMuted ? 'SFX: OFF' : 'SFX: ON');
           if (!Sfx.isMuted) this.sfx.tryUnlock();
           this.sfx.paddleHit();
         },
-      },
-      {
-        label: Music.isEnabled ? 'Music: ON' : 'Music: OFF',
-        y: 72,
-        onClick: () => {
+      );
+      this.soundMenuLabel = btn.text;
+      container.add([btn.bg, btn.text]);
+    }
+    // Music on/off
+    {
+      const btn = this.makePauseButton(
+        Music.isEnabled ? 'Music: ON' : 'Music: OFF',
+        32,
+        () => {
           Music.toggleEnabled(this);
           Music.syncPlaying(this);
-          // refresh label via rebuild is heavy; update by finding text
-          this.refreshPauseMusicLabel(container);
+          this.musicMenuLabel?.setText(
+            Music.isEnabled ? 'Music: ON' : 'Music: OFF',
+          );
           this.sfx.paddleHit();
         },
-      },
-      {
-        label: 'Main Menu',
-        y: 114,
-        onClick: () => this.goToMainMenu(),
-      },
-    ];
+      );
+      this.musicMenuLabel = btn.text;
+      container.add([btn.bg, btn.text]);
+    }
+    // Music volume %  (−  Vol xx%  +)
+    {
+      const y = 82;
+      const rowBg = this.add
+        .rectangle(0, y, 240, 40, 0x1a2332, 1)
+        .setStrokeStyle(1, 0x4fc3f7, 0.5);
+      container.add(rowBg);
 
-    // taller panel for extra row
-    panel.setSize(320, 340);
-    title.setY(-130);
-    hint.setY(148);
+      const minus = this.add
+        .text(-90, y, '−', {
+          fontFamily: 'monospace',
+          fontSize: '22px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      this.musicVolLabel = this.add
+        .text(0, y, `Vol ${Music.volumePercent}%`, {
+          fontFamily: 'monospace',
+          fontSize: '16px',
+          color: '#ffd54f',
+        })
+        .setOrigin(0.5);
+      const plus = this.add
+        .text(90, y, '+', {
+          fontFamily: 'monospace',
+          fontSize: '22px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
 
-    for (const item of items) {
-      const btn = this.makePauseButton(item.label, item.y, item.onClick);
-      container.add(btn.bg);
-      container.add(btn.text);
-      if (item.label.startsWith('SFX')) {
-        this.soundMenuLabel = btn.text;
-      }
+      const bump = (delta: number) => {
+        Music.adjustVolume(delta, this);
+        Music.syncPlaying(this);
+        this.musicVolLabel?.setText(`Vol ${Music.volumePercent}%`);
+        this.sfx.paddleHit();
+      };
+      minus.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        p.event?.stopPropagation?.();
+        this.ignoreNextPointerUp = true;
+        bump(-10);
+      });
+      plus.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        p.event?.stopPropagation?.();
+        this.ignoreNextPointerUp = true;
+        bump(10);
+      });
+      minus.on('pointerover', () => minus.setColor('#4fc3f7'));
+      minus.on('pointerout', () => minus.setColor('#ffffff'));
+      plus.on('pointerover', () => plus.setColor('#4fc3f7'));
+      plus.on('pointerout', () => plus.setColor('#ffffff'));
+
+      container.add([minus, this.musicVolLabel, plus]);
+    }
+    // Main Menu
+    {
+      const btn = this.makePauseButton('Main Menu', 132, () =>
+        this.goToMainMenu(),
+      );
+      container.add([btn.bg, btn.text]);
     }
 
     this.pauseOverlay = container;
@@ -629,20 +682,8 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay?.destroy(true);
     this.pauseOverlay = undefined;
     this.soundMenuLabel = undefined;
-  }
-
-  private refreshPauseMusicLabel(
-    container: Phaser.GameObjects.Container,
-  ): void {
-    const want = Music.isEnabled ? 'Music: ON' : 'Music: OFF';
-    for (const child of container.list) {
-      if (child instanceof Phaser.GameObjects.Text) {
-        const t = child.text;
-        if (t.startsWith('Music:')) {
-          child.setText(want);
-        }
-      }
-    }
+    this.musicMenuLabel = undefined;
+    this.musicVolLabel = undefined;
   }
 
   private startNewGame(): void {
@@ -1046,6 +1087,9 @@ export class GameScene extends Phaser.Scene {
     const lives = (this.registry.get('lives') as number) ?? START_LIVES;
     saveLevelCleared(this.levelIndex, score, lives);
     this.registry.set('highScore', loadProgress().highScore);
+
+    // Level-clear sting; next level restarts scene → playForLevel picks new track
+    Music.playLevelClear(this);
 
     const next = this.levelIndex + 1;
     if (next >= levelCount()) {

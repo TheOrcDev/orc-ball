@@ -12,8 +12,6 @@ import { Sfx } from '../systems/Sfx';
 
 export class MenuScene extends Phaser.Scene {
   private sfx!: Sfx;
-  private musicToggleLabel?: Phaser.GameObjects.Text;
-  private volumeLabel?: Phaser.GameObjects.Text;
 
   constructor() {
     super('MenuScene');
@@ -22,6 +20,9 @@ export class MenuScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.sfx = new Sfx(this);
+    this.sfx.tryUnlock();
+    // Menu loop (Moonlit Cartridge)
+    Music.playMenu(this);
 
     // Full-screen retro landing art
     if (this.textures.exists('menu-bg')) {
@@ -46,9 +47,6 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(1, 1)
       .setDepth(5);
-
-    // Music controls — top-left (out of the main art focal area)
-    this.createMusicControls(16, 16);
 
     // Play buttons near the paddle board area
     let y = HEIGHT * 0.72;
@@ -88,113 +86,6 @@ export class MenuScene extends Phaser.Scene {
       if (hasContinue && progress.run) this.startFromRun(progress.run);
       else this.startNewGame();
     });
-  }
-
-  /** Music ON/OFF + volume percentage (− / +). */
-  private createMusicControls(x: number, y: number): void {
-    const panel = this.add
-      .rectangle(x, y, 200, 78, 0x0a0a12, 0.72)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, COLORS.title, 0.5)
-      .setDepth(4)
-      .setInteractive(); // capture clicks so SPACE logic isn't affected oddly
-
-    const title = this.add
-      .text(x + 10, y + 8, 'MUSIC', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: '#4fc3f7',
-        stroke: '#000000',
-        strokeThickness: 2,
-      })
-      .setDepth(5);
-
-    // ON / OFF toggle
-    this.musicToggleLabel = this.add
-      .text(x + 10, y + 28, this.musicOnLabel(), {
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        color: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2,
-      })
-      .setDepth(5)
-      .setInteractive({ useHandCursor: true });
-
-    this.musicToggleLabel.on('pointerdown', () => {
-      this.sfx.tryUnlock();
-      Music.toggleEnabled(this);
-      this.musicToggleLabel?.setText(this.musicOnLabel());
-      this.sfx.paddleHit();
-    });
-    this.musicToggleLabel.on('pointerover', () =>
-      this.musicToggleLabel?.setColor('#4fc3f7'),
-    );
-    this.musicToggleLabel.on('pointerout', () =>
-      this.musicToggleLabel?.setColor('#ffffff'),
-    );
-
-    // Volume row:  −  50%  +
-    const volY = y + 52;
-    const minus = this.add
-      .text(x + 10, volY, '−', {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2,
-      })
-      .setDepth(5)
-      .setInteractive({ useHandCursor: true });
-
-    this.volumeLabel = this.add
-      .text(x + 70, volY, this.volumeText(), {
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        color: '#ffd54f',
-        stroke: '#000000',
-        strokeThickness: 2,
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(5);
-
-    const plus = this.add
-      .text(x + 130, volY, '+', {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 2,
-      })
-      .setDepth(5)
-      .setInteractive({ useHandCursor: true });
-
-    const bump = (delta: number) => {
-      this.sfx.tryUnlock();
-      Music.adjustVolume(delta, this);
-      this.volumeLabel?.setText(this.volumeText());
-      // If they turn volume up while "off", keep enabled state as-is
-      this.sfx.paddleHit();
-    };
-
-    minus.on('pointerdown', () => bump(-10));
-    plus.on('pointerdown', () => bump(10));
-    minus.on('pointerover', () => minus.setColor('#4fc3f7'));
-    minus.on('pointerout', () => minus.setColor('#ffffff'));
-    plus.on('pointerover', () => plus.setColor('#4fc3f7'));
-    plus.on('pointerout', () => plus.setColor('#ffffff'));
-
-    // Keep panel reference live for lint (used as click shield)
-    void panel;
-    void title;
-  }
-
-  private musicOnLabel(): string {
-    return Music.isEnabled ? 'Music: ON' : 'Music: OFF';
-  }
-
-  private volumeText(): string {
-    return `Vol ${Music.volumePercent}%`;
   }
 
   private addMenuButton(
@@ -242,6 +133,7 @@ export class MenuScene extends Phaser.Scene {
 
   private startNewGame(): void {
     this.sfx.tryUnlock();
+    Music.stop(this);
     clearRunKeepUnlocks();
     const progress = loadProgress();
     this.registry.set('score', 0);
@@ -253,6 +145,7 @@ export class MenuScene extends Phaser.Scene {
 
   private startFromRun(run: RunProgress): void {
     this.sfx.tryUnlock();
+    Music.stop(this);
     const progress = loadProgress();
     this.registry.set('score', run.score);
     this.registry.set('lives', run.lives);

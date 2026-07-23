@@ -30,8 +30,21 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     // Title / landing art from public/
     this.load.image('menu-bg', 'orc-ball-landing.jpg');
-    // In-game soundtrack (Alp.traum – Binary Eagle)
-    this.load.audio('music-game', 'audio/binary-eagle.mp3');
+    // Soundtracks (prefer mp3 for size; see public/audio/)
+    this.load.audio('music-menu', 'audio/orc-ball-menu-moonlit-cartridge.mp3');
+    this.load.audio(
+      'music-coin-op',
+      'audio/orc-ball-gameplay-coin-op-chase.mp3',
+    );
+    this.load.audio(
+      'music-danger',
+      'audio/orc-ball-danger-one-heart-left.mp3',
+    );
+    this.load.audio(
+      'music-level-clear',
+      'audio/orc-ball-level-clear-gem-secured.mp3',
+    );
+    this.load.audio('music-binary-eagle', 'audio/binary-eagle.mp3');
   }
 
   create(): void {
