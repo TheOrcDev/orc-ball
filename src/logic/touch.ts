@@ -104,3 +104,16 @@ export function isClientInCanvas(
     clientY <= bottom
   );
 }
+
+/**
+ * Convert pointer-lock movementX (CSS pixels) into game-world delta X,
+ * accounting for FIT letterboxing scale.
+ */
+export function pointerLockDeltaToGameX(
+  movementX: number,
+  canvasDisplayWidth: number,
+  worldWidth: number,
+): number {
+  if (!(canvasDisplayWidth > 0) || !(worldWidth > 0)) return 0;
+  return (movementX / canvasDisplayWidth) * worldWidth;
+}

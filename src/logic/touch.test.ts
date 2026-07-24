@@ -5,6 +5,7 @@ import {
   clientYToGameY,
   isClientInCanvas,
   isTapGesture,
+  pointerLockDeltaToGameX,
   prefersTouchUi,
   TAP_MAX_DIST,
   TAP_MAX_MS,
@@ -114,5 +115,17 @@ describe('isClientInCanvas', () => {
 
   it('false in letterbox below canvas', () => {
     expect(isClientInCanvas(300, 550, rect)).toBe(false);
+  });
+});
+
+describe('pointerLockDeltaToGameX', () => {
+  it('scales screen movement into world units', () => {
+    // Canvas displayed at half width: 1px screen = 2 world units
+    expect(pointerLockDeltaToGameX(10, 400, 800)).toBe(20);
+    expect(pointerLockDeltaToGameX(-5, 400, 800)).toBe(-10);
+  });
+
+  it('returns 0 for invalid display size', () => {
+    expect(pointerLockDeltaToGameX(10, 0, 800)).toBe(0);
   });
 });

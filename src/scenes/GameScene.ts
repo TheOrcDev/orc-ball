@@ -45,10 +45,12 @@ import {
 import { laserMuzzleXs } from '../logic/powerUpState';
 import { velocityFromAngle } from '../logic/steering';
 import {
+  clampPaddleX,
   clientXToGameX,
   clientYToGameY,
   isClientInCanvas,
   isTapGesture,
+  pointerLockDeltaToGameX,
   prefersTouchUi,
 } from '../logic/touch';
 import { Ball } from '../objects/Ball';
@@ -123,6 +125,16 @@ export class GameScene extends Phaser.Scene {
     this.handleDocTouchMove(e);
   private readonly onDocTouchEnd = (e: TouchEvent): void =>
     this.handleDocTouchEnd(e);
+  /**
+   * Desktop mouse: click locks the pointer for continuous paddle control;
+   * ESC releases (browser also exits lock). Not used on touch UI.
+   */
+  private mouseLocked = false;
+  private lockedAimX = WIDTH / 2;
+  private mouseUnlockAt = 0;
+  private desktopHint?: Phaser.GameObjects.Text;
+  private readonly onPointerLockChange = (): void =>
+    this.handlePointerLockChange();
 
   constructor() {
     super('GameScene');
@@ -173,8 +185,10 @@ export class GameScene extends Phaser.Scene {
     const paddleY = this.touchUi ? PADDLE_Y_TOUCH : PADDLE_Y;
     this.paddle = new Paddle(this, undefined, paddleY);
     this.paddle.setDepth(10);
+    this.lockedAimX = this.paddle.x;
     this.setupPointerControls();
     if (this.touchUi) this.createTouchChrome();
+    else this.createDesktopChrome();
     this.balls = this.physics.add.group({
       classType: Ball,
       runChildUpdate: false,
@@ -398,12 +412,133 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    // Desktop pointer-lock mouse control
+    if (!this.touchUi && typeof document !== 'undefined') {
+      document.addEventListener('pointerlockchange', this.onPointerLockChange);
+      document.addEventListener(
+        'mozpointerlockchange',
+        this.onPointerLockChange,
+      );
+    }
+
     this.events.on('shutdown', () => {
       this.input.off('pointerdown', this.onPointerDown, this);
       this.input.off('pointermove', this.onPointerMove, this);
       this.input.off('pointerup', this.onPointerUp, this);
       this.teardownExternalTouchBridge();
+      this.releaseMouseLock();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener(
+          'pointerlockchange',
+          this.onPointerLockChange,
+        );
+        document.removeEventListener(
+          'mozpointerlockchange',
+          this.onPointerLockChange,
+        );
+      }
     });
+  }
+
+  private isPointerLocked(): boolean {
+    if (typeof document === 'undefined') return false;
+    return document.pointerLockElement === this.game.canvas;
+  }
+
+  private requestMouseLock(): void {
+    if (this.touchUi || this.isPaused || this.pausedForOverlay) return;
+    const canvas = this.game.canvas;
+    if (!canvas?.requestPointerLock) return;
+    if (this.isPointerLocked()) return;
+    try {
+      void canvas.requestPointerLock();
+    } catch {
+      // Browser may reject outside a user gesture or without secure context
+    }
+  }
+
+  private releaseMouseLock(): void {
+    if (typeof document === 'undefined') return;
+    if (document.pointerLockElement && document.exitPointerLock) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // ignore
+      }
+    }
+    this.applyMouseLockState(false);
+  }
+
+  private handlePointerLockChange(): void {
+    const locked = this.isPointerLocked();
+    this.applyMouseLockState(locked);
+  }
+
+  private applyMouseLockState(locked: boolean): void {
+    const wasLocked = this.mouseLocked;
+    this.mouseLocked = locked;
+    if (locked) {
+      this.lockedAimX = this.paddle.x;
+      this.paddle.setPointerTargetX(this.lockedAimX);
+      this.setDesktopHintLocked(true);
+    } else {
+      if (wasLocked) {
+        this.mouseUnlockAt = this.time.now;
+      }
+      // Keep paddle where it is; free cursor → keyboard again
+      this.paddle.setPointerTargetX(null);
+      this.setDesktopHintLocked(false);
+    }
+  }
+
+  private applyLockedMouseMove(movementX: number): void {
+    if (!this.mouseLocked || this.isPaused || this.pausedForOverlay) return;
+    if (!movementX) return;
+    const rect = this.canvasClientRect();
+    const dx = pointerLockDeltaToGameX(movementX, rect.width, WIDTH);
+    const half = this.paddle.displayWidth / 2;
+    this.lockedAimX = clampPaddleX(this.lockedAimX + dx, half, WIDTH);
+    this.paddle.setPointerTargetX(this.lockedAimX);
+  }
+
+  private createDesktopChrome(): void {
+    this.desktopHint = this.add
+      .text(
+        WIDTH / 2,
+        HEIGHT - 14,
+        'Click to lock mouse  ·  move to aim  ·  click to launch  ·  ESC free cursor',
+        {
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          color: '#78909c',
+        },
+      )
+      .setOrigin(0.5, 1)
+      .setDepth(1000)
+      .setScrollFactor(0);
+
+    this.time.delayedCall(8000, () => {
+      if (this.desktopHint?.active && !this.mouseLocked) {
+        this.tweens.add({
+          targets: this.desktopHint,
+          alpha: 0.35,
+          duration: 600,
+        });
+      }
+    });
+  }
+
+  private setDesktopHintLocked(locked: boolean): void {
+    if (!this.desktopHint?.active) return;
+    if (locked) {
+      this.desktopHint.setText('Mouse locked  ·  ESC to free cursor  ·  P pause');
+      this.desktopHint.setAlpha(0.55);
+    } else {
+      this.desktopHint.setText(
+        'Click to lock mouse  ·  move to aim  ·  click to launch  ·  ESC free cursor',
+      );
+      this.desktopHint.setAlpha(1);
+    }
   }
 
   private teardownExternalTouchBridge(): void {
@@ -555,17 +690,41 @@ export class GameScene extends Phaser.Scene {
     if (this.isPaused) return;
     // External bridge owns this finger when it started in the letterbox
     if (this.externalTouchId !== null) return;
+
+    // Desktop: click locks mouse; while locked, click launches
+    if (!this.touchUi) {
+      if (this.mouseLocked || this.isPointerLocked()) {
+        this.handleSpaceAction();
+        return;
+      }
+      // Only primary button locks
+      if (pointer.leftButtonDown() || pointer.button === 0) {
+        this.requestMouseLock();
+      }
+      return;
+    }
+
     this.beginPointerSteer(pointer.x, pointer.y);
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.isDown || this.pausedForOverlay || this.isPaused) return;
+    if (this.pausedForOverlay || this.isPaused) return;
     if (this.externalTouchId !== null) return;
+
+    // Desktop pointer-lock: continuous relative mouse aim (no button held)
+    if (!this.touchUi && (this.mouseLocked || this.isPointerLocked())) {
+      this.applyLockedMouseMove(pointer.movementX);
+      return;
+    }
+
+    if (!pointer.isDown) return;
     this.movePointerSteer(pointer.x, pointer.y);
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
     if (this.externalTouchId !== null) return;
+    // Don't drop aim when mouse is pointer-locked
+    if (!this.touchUi && (this.mouseLocked || this.isPointerLocked())) return;
     this.endPointerSteer(pointer.x, pointer.y);
   }
 
@@ -651,6 +810,7 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = true;
     this.physics.world.pause();
     this.time.paused = true;
+    this.releaseMouseLock();
     this.paddle.setPointerTargetX(null);
     Music.pause(this);
     this.showPauseMenu();
@@ -880,6 +1040,7 @@ export class GameScene extends Phaser.Scene {
       saveRun(this.levelIndex, score, lives);
       this.registry.set('highScore', loadProgress().highScore);
     }
+    this.releaseMouseLock();
     Music.stop(this);
     this.clearPauseMenu();
     this.isPaused = false;
@@ -1330,6 +1491,8 @@ export class GameScene extends Phaser.Scene {
     // Level-clear sting; next level restarts scene → playForLevel picks new track
     Music.playLevelClear(this);
 
+    this.releaseMouseLock();
+
     const next = this.levelIndex + 1;
     if (next >= levelCount()) {
       // Campaign complete — award clear + remaining-lives bonuses, then celebrate
@@ -1387,6 +1550,7 @@ export class GameScene extends Phaser.Scene {
   private onGameOver(): void {
     this.gameOverFlag = true;
     this.pausedForOverlay = true;
+    this.releaseMouseLock();
     this.sfx.gameOver();
     const score = (this.registry.get('score') as number) ?? 0;
     saveGameOver(score, this.levelIndex);
@@ -1395,12 +1559,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    // ESC or P opens/closes the pause menu (except win/lose overlays)
+    // ESC: free mouse lock first; otherwise open/close pause.
+    // P always toggles pause (also releases lock via pauseGame).
     const escPressed =
       this.escKey && Phaser.Input.Keyboard.JustDown(this.escKey);
     const pPressed =
       this.pauseKey && Phaser.Input.Keyboard.JustDown(this.pauseKey);
-    if (escPressed || pPressed) {
+
+    if (escPressed) {
+      if (this.mouseLocked || this.isPointerLocked()) {
+        this.releaseMouseLock();
+      } else if (this.time.now - this.mouseUnlockAt < 250) {
+        // Browser already unlocked on ESC — don't open pause on that same key
+      } else {
+        this.togglePause();
+      }
+    } else if (pPressed) {
       this.togglePause();
     }
 
