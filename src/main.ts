@@ -1,9 +1,13 @@
+import { inject } from '@vercel/analytics';
 import Phaser from 'phaser';
 import { HEIGHT, WIDTH } from './config';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { MenuScene } from './scenes/MenuScene';
 import { UIScene } from './scenes/UIScene';
+
+// Vercel Web Analytics (this is a Vite SPA — not Next.js)
+inject();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
