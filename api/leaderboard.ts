@@ -1,15 +1,19 @@
 import { neon } from '@neondatabase/serverless';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import {
-  isValidName,
-  isValidScore,
-  LEADERBOARD_TOP_N,
-  sanitizeName,
-  type RankedEntry,
-} from '../src/logic/leaderboardRules';
 
+/**
+ * Self-contained serverless handler — do not import from ../src.
+ * Vercel only packs the api/ entry + node_modules; src/ is not available at runtime.
+ */
+
+const TOP_N = 20;
+const NAME_MAX = 12;
+const NAME_MIN = 1;
+const SCORE_MAX = 10_000_000;
+const SCORE_MIN = 1;
 /** Min seconds between submissions per IP. */
 const RATE_LIMIT_SEC = 20;
+const NAME_ALLOWED = /^[A-Za-z0-9 _.\-]+$/;
 
 type ScoreRow = {
   id: string;
@@ -17,6 +21,31 @@ type ScoreRow = {
   score: number;
   at: number;
 };
+
+type RankedEntry = ScoreRow & { rank: number };
+
+function sanitizeName(raw: string): string {
+  return raw
+    .normalize('NFKC')
+    .replace(/[^\w .\-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, NAME_MAX);
+}
+
+function isValidName(name: string): boolean {
+  return (
+    name.length >= NAME_MIN &&
+    name.length <= NAME_MAX &&
+    NAME_ALLOWED.test(name)
+  );
+}
+
+function isValidScore(score: number): boolean {
+  return (
+    Number.isInteger(score) && score >= SCORE_MIN && score <= SCORE_MAX
+  );
+}
 
 function getSql() {
   const url = process.env.DATABASE_URL;
@@ -42,8 +71,8 @@ function setCors(res: VercelResponse): void {
 
 function toRanked(rows: ScoreRow[]): RankedEntry[] {
   return rows.map((row, i) => ({
-    id: row.id,
-    name: row.name,
+    id: String(row.id),
+    name: String(row.name),
     score: Number(row.score),
     at: Number(row.at),
     rank: i + 1,
@@ -80,7 +109,7 @@ export default async function handler(
           (EXTRACT(EPOCH FROM created_at) * 1000)::bigint AS at
         FROM leaderboard_scores
         ORDER BY score DESC, created_at ASC
-        LIMIT ${LEADERBOARD_TOP_N}
+        LIMIT ${TOP_N}
       `) as ScoreRow[];
 
       res.status(200).json({ entries: toRanked(rows) });
@@ -112,7 +141,7 @@ export default async function handler(
         ON CONFLICT (ip) DO UPDATE
           SET last_submit_at = now()
           WHERE leaderboard_rate_limits.last_submit_at
-            < now() - (${RATE_LIMIT_SEC} * interval '1 second')
+            < now() - make_interval(secs => ${RATE_LIMIT_SEC})
         RETURNING ip
       `;
       if (rateRows.length === 0) {
@@ -138,12 +167,18 @@ export default async function handler(
         return;
       }
 
+      const entryScore = Number(entry.score);
+      const entryAt = Number(entry.at);
+
       const rankRows = (await sql`
         SELECT COUNT(*)::int AS better
         FROM leaderboard_scores
         WHERE
-          score > ${entry.score}
-          OR (score = ${entry.score} AND created_at < to_timestamp(${entry.at} / 1000.0))
+          score > ${entryScore}
+          OR (
+            score = ${entryScore}
+            AND created_at < to_timestamp(${entryAt / 1000})
+          )
       `) as { better: number }[];
       const rank = Number(rankRows[0]?.better ?? 0) + 1;
 
@@ -155,17 +190,17 @@ export default async function handler(
           (EXTRACT(EPOCH FROM created_at) * 1000)::bigint AS at
         FROM leaderboard_scores
         ORDER BY score DESC, created_at ASC
-        LIMIT ${LEADERBOARD_TOP_N}
+        LIMIT ${TOP_N}
       `) as ScoreRow[];
 
       res.status(201).json({
         ok: true,
         rank,
         entry: {
-          id: entry.id,
-          name: entry.name,
-          score: Number(entry.score),
-          at: Number(entry.at),
+          id: String(entry.id),
+          name: String(entry.name),
+          score: entryScore,
+          at: entryAt,
           rank,
         },
         entries: toRanked(topRows),
