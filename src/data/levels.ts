@@ -50,7 +50,7 @@ const DROPS_BRUTAL: Partial<Record<PowerUpType, number>> = {
 };
 
 /**
- * 25 data-driven levels. Layouts use '.' empty, '1'–'3' HP, 'X' indestructible.
+ * 26 data-driven levels. Layouts use '.' empty, '1'–'3' HP, 'X' indestructible.
  * Speed and denser X / HP3 ramp as the campaign progresses.
  */
 export const LEVELS: LevelDef[] = [
