@@ -172,6 +172,11 @@ export class GameScene extends Phaser.Scene {
       this.registry.set('lives', START_LIVES);
     this.registry.set('level', this.levelIndex);
     this.registry.set('uiOverlay', 'none');
+    this.registry.set('forceMenu', false);
+    this.registry.events.on('changedata-forceMenu', this.onForceMenu, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.registry.events.off('changedata-forceMenu', this.onForceMenu, this);
+    });
 
     this.sfx = new Sfx(this);
     this.sfx.tryUnlock();
@@ -1681,10 +1686,28 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (overlay === 'gameOver' || overlay === 'victory') {
-      this.registry.set('uiOverlay', 'none');
-      this.scene.stop('UIScene');
-      this.scene.start('MenuScene');
+    if (overlay === 'victory') {
+      const ui = this.scene.get('UIScene') as UIScene | null;
+      if (ui && typeof ui.tryAdvanceVictory === 'function') {
+        if (!ui.tryAdvanceVictory()) return;
+      }
+      this.goToMenu();
+      return;
     }
+
+    if (overlay === 'gameOver' || overlay === 'leaderboard') {
+      this.goToMenu();
+    }
+  }
+
+  private onForceMenu(_parent: Phaser.Data.DataManager, value: unknown): void {
+    if (value) this.goToMenu();
+  }
+
+  private goToMenu(): void {
+    this.registry.set('forceMenu', false);
+    this.registry.set('uiOverlay', 'none');
+    this.scene.stop('UIScene');
+    this.scene.start('MenuScene');
   }
 }

@@ -86,6 +86,8 @@ export const MUSIC_ENABLED_KEY = 'orc-ball-music-enabled';
 /** 0–100 */
 export const MUSIC_VOLUME_KEY = 'orc-ball-music-volume';
 export const MUSIC_VOLUME_DEFAULT = 50;
+/** Last name used on the global leaderboard. */
+export const LEADERBOARD_NAME_KEY = 'orc-ball-player-name';
 
 export const SCORE_PER_HIT = 10;
 export const SCORE_PER_BREAK = 50;

@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
 import { COLORS, HEIGHT, START_LIVES, WIDTH } from '../config';
 import { levelCount } from '../data/levels';
+import {
+  LEADERBOARD_TOP_N,
+  type RankedEntry,
+} from '../logic/leaderboardRules';
 import { prefersTouchUi } from '../logic/touch';
 import {
   canContinue,
@@ -8,12 +12,15 @@ import {
   loadProgress,
   type RunProgress,
 } from '../systems/ProgressSave';
+import { fetchLeaderboard } from '../systems/LeaderboardClient';
 import { DEFERRED_TRACK_ASSETS, Music } from '../systems/Music';
 import { Sfx } from '../systems/Sfx';
 
 export class MenuScene extends Phaser.Scene {
   private sfx!: Sfx;
   private deferredAudioReady = false;
+  private boardOverlay?: Phaser.GameObjects.Container;
+  private boardOpen = false;
 
   constructor() {
     super('MenuScene');
@@ -28,6 +35,7 @@ export class MenuScene extends Phaser.Scene {
     // Kick browser autoplay unlock as soon as anything is pressed.
     Music.armAutoplay(this);
     this.loadDeferredAudio();
+    this.boardOpen = false;
 
     // Full-screen retro landing art
     if (this.textures.exists('menu-bg')) {
@@ -75,7 +83,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     // Play buttons near the paddle board area
-    let y = HEIGHT * 0.72;
+    let y = HEIGHT * 0.68;
     if (hasContinue && progress.run) {
       const run = progress.run;
       this.addMenuButton(
@@ -85,7 +93,7 @@ export class MenuScene extends Phaser.Scene {
         () => this.startFromRun(run),
         true,
       );
-      y += 48;
+      y += 46;
       this.addMenuButton(
         WIDTH / 2,
         y,
@@ -102,6 +110,16 @@ export class MenuScene extends Phaser.Scene {
         true,
       );
     }
+    y += 46;
+    this.addMenuButton(
+      WIDTH / 2,
+      y,
+      'Leaderboard',
+      () => {
+        void this.openLeaderboard();
+      },
+      false,
+    );
 
     this.input.keyboard?.addCapture('SPACE,LEFT,RIGHT,A,D,P,ESC');
 
@@ -120,9 +138,22 @@ export class MenuScene extends Phaser.Scene {
     const space = this.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE,
     );
-    space?.once('down', () => {
+    space?.on('down', () => {
+      if (this.boardOpen) {
+        this.closeLeaderboard();
+        return;
+      }
       if (hasContinue && progress.run) this.startFromRun(progress.run);
       else this.startNewGame();
+    });
+
+    const esc = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    esc?.on('down', () => {
+      if (this.boardOpen) this.closeLeaderboard();
+    });
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.closeLeaderboard();
     });
   }
 
@@ -194,12 +225,125 @@ export class MenuScene extends Phaser.Scene {
       bg.setFillStyle(primary ? 0x1565c0 : 0x0d1520, 0.88);
       text.setColor('#ffffff');
     });
-    bg.on('pointerdown', () => {
+    bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event?.stopPropagation?.();
       onClick();
     });
   }
 
+  private async openLeaderboard(): Promise<void> {
+    if (this.boardOpen) return;
+    this.boardOpen = true;
+
+    const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(200);
+    const veil = this.add
+      .rectangle(0, 0, WIDTH, HEIGHT, 0x050510, 0.88)
+      .setInteractive();
+    // Swallow clicks on the panel so they don't start a game
+    veil.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event?.stopPropagation?.();
+      this.closeLeaderboard();
+    });
+
+    const panelW = Math.min(WIDTH * 0.92, 560);
+    const panelH = Math.min(HEIGHT * 0.9, 520);
+    const panel = this.add
+      .rectangle(0, 0, panelW, panelH, 0x0a1220, 0.97)
+      .setStrokeStyle(3, 0x4fc3f7, 1)
+      .setInteractive();
+    panel.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      p.event?.stopPropagation?.();
+    });
+
+    const title = this.add
+      .text(0, -panelH / 2 + 36, 'TOP MASTERS', {
+        fontFamily: 'monospace',
+        fontSize: '28px',
+        fontStyle: 'bold',
+        color: '#4fc3f7',
+        stroke: '#001018',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+
+    const status = this.add
+      .text(0, -panelH / 2 + 68, 'Loading…', {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#ffd54f',
+      })
+      .setOrigin(0.5);
+
+    const header = this.add
+      .text(0, -panelH / 2 + 100, ' #   NAME            SCORE', {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        color: '#78909c',
+      })
+      .setOrigin(0.5, 0);
+
+    const body = this.add
+      .text(0, -panelH / 2 + 124, '', {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#ffffff',
+        align: 'left',
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5, 0);
+
+    const hint = this.add
+      .text(0, panelH / 2 - 28, 'Press SPACE / TAP  ·  close', {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        color: '#90a4ae',
+      })
+      .setOrigin(0.5);
+
+    this.tweens.add({
+      targets: hint,
+      alpha: { from: 0.45, to: 1 },
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    container.add([veil, panel, title, status, header, body, hint]);
+    this.boardOverlay = container;
+
+    const { entries, error } = await fetchLeaderboard();
+    if (!this.boardOpen || !this.boardOverlay) return;
+
+    status.setText(
+      error
+        ? error
+        : entries.length === 0
+          ? 'No scores yet — clear all 26 levels!'
+          : `Top ${LEADERBOARD_TOP_N} campaign clears`,
+    );
+    body.setText(this.formatBoardLines(entries));
+  }
+
+  private formatBoardLines(entries: RankedEntry[]): string {
+    if (entries.length === 0) return '   — empty —';
+    return entries
+      .map((e) => {
+        const rank = String(e.rank).padStart(2, ' ');
+        const name = e.name.slice(0, 12).padEnd(12, ' ');
+        const score = String(e.score).padStart(8, ' ');
+        return `${rank}   ${name}  ${score}`;
+      })
+      .join('\n');
+  }
+
+  private closeLeaderboard(): void {
+    this.boardOverlay?.destroy(true);
+    this.boardOverlay = undefined;
+    this.boardOpen = false;
+  }
+
   private startNewGame(): void {
+    if (this.boardOpen) return;
     this.sfx.tryUnlock();
     Music.tryResumeContext(this);
     this.whenAudioReady(() => {
@@ -215,6 +359,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private startFromRun(run: RunProgress): void {
+    if (this.boardOpen) return;
     this.sfx.tryUnlock();
     Music.tryResumeContext(this);
     this.whenAudioReady(() => {

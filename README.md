@@ -4,13 +4,29 @@
 
 Retro **Breakout / DX-Ball** style arcade game in the browser — Phaser 3, TypeScript, Vite.
 
-Smash brick walls, collect power-ups (glue, laser, multi-ball, fireball, and more), and clear **26 levels**. Progress and high scores save in your browser.
+Smash brick walls, collect power-ups (glue, laser, multi-ball, fireball, and more), and clear **26 levels**. Progress and high scores save in your browser. Clear the campaign to submit your score to the **global top-20 leaderboard**.
 
 ## Play
 
 - Live: https://orcball.com
 - Local: `npm install && npm run dev`
 - Production: `npm run build && npm run preview`
+- API locally: `vercel dev` (loads `DATABASE_URL` from `.env`)
+
+## Leaderboard
+
+Campaign clears can be submitted with a name (max 12 chars). The public board shows the top **20** scores.
+
+Storage is **Neon Postgres** (`leaderboard_scores` table). The API needs:
+
+```bash
+DATABASE_URL=postgresql://…  # Neon pooled connection string
+```
+
+- Local: copy `.env.example` → `.env` and fill in the URL (or `neonctl env pull` if linked)
+- Production: set `DATABASE_URL` on the Vercel project (Production + Preview), then redeploy
+
+Without `DATABASE_URL` the game still runs; the board returns offline / empty.
 
 ## Controls
 

@@ -1,9 +1,31 @@
 import Phaser from 'phaser';
-import { COLORS, HEIGHT, WIDTH } from '../config';
+import { COLORS, HEIGHT, LEADERBOARD_NAME_KEY, WIDTH } from '../config';
 import { levelCount } from '../data/levels';
+import {
+  LEADERBOARD_NAME_MAX,
+  LEADERBOARD_TOP_N,
+  sanitizeName,
+  type RankedEntry,
+} from '../logic/leaderboardRules';
 import { updateHighScore } from '../systems/ProgressSave';
+import {
+  fetchLeaderboard,
+  submitScore,
+} from '../systems/LeaderboardClient';
+import {
+  closeNameEntry,
+  isNameEntryOpen,
+  openNameEntry,
+} from '../systems/NameEntryDom';
 
-export type OverlayMode = 'none' | 'levelComplete' | 'gameOver' | 'victory';
+export type OverlayMode =
+  | 'none'
+  | 'levelComplete'
+  | 'gameOver'
+  | 'victory'
+  | 'leaderboard';
+
+type VictoryPhase = 'name' | 'submitting' | 'board' | 'leave';
 
 export class UIScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
@@ -12,6 +34,8 @@ export class UIScene extends Phaser.Scene {
   private effectsText!: Phaser.GameObjects.Text;
   private overlay?: Phaser.GameObjects.Container;
   private confetti?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private victoryPhase: VictoryPhase = 'name';
+  private statusLine?: Phaser.GameObjects.Text;
 
   constructor() {
     super('UIScene');
@@ -54,6 +78,7 @@ export class UIScene extends Phaser.Scene {
 
     this.events.on('shutdown', () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
+      closeNameEntry();
       this.clearOverlay();
     });
 
@@ -62,6 +87,21 @@ export class UIScene extends Phaser.Scene {
     if (pending && pending !== 'none') {
       this.showOverlay(pending);
     }
+  }
+
+  /**
+   * SPACE / tap while victory is up.
+   * @returns true when the run should return to the main menu.
+   */
+  tryAdvanceVictory(): boolean {
+    if (isNameEntryOpen()) return false;
+    if (this.victoryPhase === 'submitting') return false;
+    if (this.victoryPhase === 'board' || this.victoryPhase === 'leave') {
+      closeNameEntry();
+      this.victoryPhase = 'leave';
+      return true;
+    }
+    return false;
   }
 
   private onRegistryChange(
@@ -131,10 +171,15 @@ export class UIScene extends Phaser.Scene {
 
   showOverlay(mode: OverlayMode): void {
     this.clearOverlay();
+    closeNameEntry();
     if (mode === 'none') return;
 
     if (mode === 'victory') {
       this.buildVictoryOverlay();
+      return;
+    }
+    if (mode === 'leaderboard') {
+      void this.buildLeaderboardOverlay();
       return;
     }
     if (mode === 'gameOver') {
@@ -178,7 +223,24 @@ export class UIScene extends Phaser.Scene {
     return lines;
   }
 
+  private loadSavedName(): string {
+    try {
+      return sanitizeName(localStorage.getItem(LEADERBOARD_NAME_KEY) ?? '');
+    } catch {
+      return '';
+    }
+  }
+
+  private saveName(name: string): void {
+    try {
+      localStorage.setItem(LEADERBOARD_NAME_KEY, name);
+    } catch {
+      /* private mode */
+    }
+  }
+
   private buildVictoryOverlay(): void {
+    this.victoryPhase = 'name';
     const score = (this.registry.get('score') as number) ?? 0;
     const high = (this.registry.get('highScore') as number) ?? 0;
     const lives = (this.registry.get('lives') as number) ?? 0;
@@ -188,8 +250,6 @@ export class UIScene extends Phaser.Scene {
 
     const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(1000);
 
-    // Full dim so the board doesn't distract (not interactive — GameScene
-    // handles SPACE / tap to dismiss while pausedForOverlay).
     const veil = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x050510, 0.82);
 
     const panelW = Math.min(WIDTH * 0.86, 520);
@@ -276,22 +336,14 @@ export class UIScene extends Phaser.Scene {
       });
     }
 
-    const hint = this.add
-      .text(0, 128, 'Press SPACE / TAP  ·  return to menu', {
+    this.statusLine = this.add
+      .text(0, 118, 'Enter your name for the global board', {
         fontFamily: 'monospace',
         fontSize: '14px',
         color: '#90a4ae',
       })
       .setOrigin(0.5);
-    nodes.push(hint);
-
-    this.tweens.add({
-      targets: hint,
-      alpha: { from: 0.45, to: 1 },
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
-    });
+    nodes.push(this.statusLine);
 
     this.tweens.add({
       targets: title,
@@ -304,6 +356,214 @@ export class UIScene extends Phaser.Scene {
     container.add(nodes);
     this.overlay = container;
     this.spawnConfetti();
+
+    // Name field after confetti starts — DOM sits above the canvas
+    this.time.delayedCall(280, () => {
+      if (this.victoryPhase !== 'name') return;
+      openNameEntry({
+        title: 'ENTER YOUR NAME',
+        placeholder: 'NAME',
+        maxLength: LEADERBOARD_NAME_MAX,
+        initial: this.loadSavedName(),
+        submitLabel: 'SUBMIT SCORE',
+        skipLabel: 'SKIP',
+        onSubmit: (raw) => {
+          void this.onVictoryNameSubmit(raw, score);
+        },
+        onSkip: () => {
+          this.victoryPhase = 'leave';
+          this.registry.set('forceMenu', true);
+        },
+      });
+    });
+  }
+
+  private async onVictoryNameSubmit(raw: string, score: number): Promise<void> {
+    const name = sanitizeName(raw);
+    if (!name) {
+      this.statusLine?.setText('Name required — try again');
+      this.victoryPhase = 'name';
+      openNameEntry({
+        title: 'ENTER YOUR NAME',
+        placeholder: 'NAME',
+        maxLength: LEADERBOARD_NAME_MAX,
+        initial: '',
+        submitLabel: 'SUBMIT SCORE',
+        skipLabel: 'SKIP',
+        onSubmit: (n) => {
+          void this.onVictoryNameSubmit(n, score);
+        },
+        onSkip: () => {
+          this.victoryPhase = 'leave';
+          this.registry.set('forceMenu', true);
+        },
+      });
+      return;
+    }
+
+    this.victoryPhase = 'submitting';
+    this.saveName(name);
+    this.statusLine?.setText('Submitting score…');
+    this.statusLine?.setColor('#4fc3f7');
+
+    const result = await submitScore(name, score);
+    if (result.error || !result.entries) {
+      this.statusLine?.setText(result.error ?? 'Submit failed');
+      this.statusLine?.setColor('#ef5350');
+      // Still show board (maybe empty) so player can leave
+      const fallback = await fetchLeaderboard();
+      this.showBoardAfterVictory(
+        fallback.entries,
+        undefined,
+        result.error ?? 'Could not submit — board is view-only',
+      );
+      return;
+    }
+
+    this.showBoardAfterVictory(
+      result.entries,
+      result.rank,
+      result.rank
+        ? `You placed  #${result.rank}  ·  ${name}  ${score}`
+        : `Submitted as ${name}`,
+    );
+  }
+
+  private showBoardAfterVictory(
+    entries: RankedEntry[],
+    playerRank: number | undefined,
+    subtitle: string,
+  ): void {
+    this.victoryPhase = 'board';
+    closeNameEntry();
+    this.clearOverlay();
+    this.buildLeaderboardPanel({
+      title: 'TOP MASTERS',
+      subtitle,
+      entries,
+      highlightRank: playerRank,
+      hint: 'Press SPACE / TAP  ·  return to menu',
+    });
+  }
+
+  private async buildLeaderboardOverlay(): Promise<void> {
+    const loading = this.add
+      .text(WIDTH / 2, HEIGHT / 2, 'Loading leaderboard…', {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        color: '#90a4ae',
+      })
+      .setOrigin(0.5)
+      .setDepth(1000);
+
+    const { entries, error } = await fetchLeaderboard();
+    loading.destroy();
+
+    this.buildLeaderboardPanel({
+      title: 'TOP MASTERS',
+      subtitle: error
+        ? error
+        : entries.length === 0
+          ? 'No scores yet — clear all 26 levels!'
+          : `Top ${LEADERBOARD_TOP_N} campaign clears`,
+      entries,
+      hint: 'Press SPACE / TAP  ·  close',
+    });
+  }
+
+  private buildLeaderboardPanel(opts: {
+    title: string;
+    subtitle: string;
+    entries: RankedEntry[];
+    highlightRank?: number;
+    hint: string;
+  }): void {
+    const container = this.add.container(WIDTH / 2, HEIGHT / 2).setDepth(1000);
+    const veil = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x050510, 0.88);
+
+    const panelW = Math.min(WIDTH * 0.92, 560);
+    const panelH = Math.min(HEIGHT * 0.9, 520);
+    const panel = this.add
+      .rectangle(0, 0, panelW, panelH, 0x0a1220, 0.97)
+      .setStrokeStyle(3, 0x4fc3f7, 1);
+
+    const title = this.add
+      .text(0, -panelH / 2 + 36, opts.title, {
+        fontFamily: 'monospace',
+        fontSize: '28px',
+        fontStyle: 'bold',
+        color: '#4fc3f7',
+        stroke: '#001018',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+
+    const subtitle = this.add
+      .text(0, -panelH / 2 + 68, opts.subtitle, {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#ffd54f',
+        align: 'center',
+        wordWrap: { width: panelW - 40 },
+      })
+      .setOrigin(0.5);
+
+    const header = this.add
+      .text(0, -panelH / 2 + 100, ' #   NAME            SCORE', {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        color: '#78909c',
+      })
+      .setOrigin(0.5, 0);
+
+    const lines =
+      opts.entries.length === 0
+        ? ['   — empty —']
+        : opts.entries.map((e) => {
+            const rank = String(e.rank).padStart(2, ' ');
+            const name = e.name.slice(0, 12).padEnd(12, ' ');
+            const score = String(e.score).padStart(8, ' ');
+            return `${rank}   ${name}  ${score}`;
+          });
+
+    const body = this.add
+      .text(0, -panelH / 2 + 124, lines.join('\n'), {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#ffffff',
+        align: 'left',
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5, 0);
+
+    // Highlight player's row if present in top 20
+    if (opts.highlightRank && opts.highlightRank <= LEADERBOARD_TOP_N) {
+      const idx = opts.highlightRank - 1;
+      const rowY = -panelH / 2 + 124 + idx * 21;
+      const hi = this.add
+        .rectangle(0, rowY + 8, panelW - 48, 20, 0x1565c0, 0.35)
+        .setOrigin(0.5);
+      container.add(hi);
+    }
+
+    const hint = this.add
+      .text(0, panelH / 2 - 28, opts.hint, {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        color: '#90a4ae',
+      })
+      .setOrigin(0.5);
+
+    this.tweens.add({
+      targets: hint,
+      alpha: { from: 0.45, to: 1 },
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    container.add([veil, panel, title, subtitle, header, body, hint]);
+    this.overlay = container;
   }
 
   private buildSimpleOverlay(opts: {
@@ -375,7 +635,6 @@ export class UIScene extends Phaser.Scene {
       emitting: true,
     });
     this.confetti.setDepth(999);
-    // Stop raining after a few seconds
     this.time.delayedCall(3500, () => {
       this.confetti?.stop();
     });
@@ -386,5 +645,6 @@ export class UIScene extends Phaser.Scene {
     this.overlay = undefined;
     this.confetti?.destroy();
     this.confetti = undefined;
+    this.statusLine = undefined;
   }
 }
