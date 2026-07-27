@@ -138,6 +138,8 @@ export class GameScene extends Phaser.Scene {
    */
   private pendingDestroy: Phaser.GameObjects.GameObject[] = [];
   private pendingDrops: { x: number; y: number }[] = [];
+  /** Level clear must not run inside a collision callback — defer to POST_UPDATE. */
+  private levelClearPending = false;
   private readonly onWorldBounds = (body: Phaser.Physics.Arcade.Body): void => {
     const go = body.gameObject;
     if (go instanceof Ball && !go.stuckToPaddle) {
@@ -156,9 +158,12 @@ export class GameScene extends Phaser.Scene {
     this.levelIndex = data.level ?? (this.registry.get('level') as number) ?? 0;
     this.pausedForOverlay = false;
     this.awaitingAdvance = false;
+    this.levelClearPending = false;
     this.gameOverFlag = false;
     this.isPaused = false;
     this.pauseOverlay = undefined;
+    this.pendingDestroy = [];
+    this.pendingDrops = [];
   }
 
   create(): void {
@@ -326,10 +331,10 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.on('worldbounds', this.onWorldBounds);
 
     // Physics runs on Scene UPDATE (after scene.update). Flush deferred
-    // destroys on POST_UPDATE so bodies are never freed mid-collision.
+    // destroys + level-clear on POST_UPDATE so nothing heavy runs mid-collision.
     this.events.on(
       Phaser.Scenes.Events.POST_UPDATE,
-      this.flushDeferredWork,
+      this.onPostUpdate,
       this,
     );
 
@@ -346,11 +351,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once('shutdown', () => {
       this.physics.world.off('worldbounds', this.onWorldBounds);
-      this.events.off(
-        Phaser.Scenes.Events.POST_UPDATE,
-        this.flushDeferredWork,
-        this,
-      );
+      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
       this.flushDeferredWork();
       Music.stop(this);
       this.powerUpManager.destroy();
@@ -1180,7 +1181,7 @@ export class GameScene extends Phaser.Scene {
       this.queuePowerUpDrop(brick.x, brick.y);
       this.queueDestroy(brick);
       if (this.destructibleRemaining <= 0) {
-        this.onLevelClear();
+        this.requestLevelClear();
       }
     }
   };
@@ -1342,7 +1343,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       if (this.destructibleRemaining <= 0) {
-        this.onLevelClear();
+        this.requestLevelClear();
       }
     }
   }
@@ -1428,12 +1429,23 @@ export class GameScene extends Phaser.Scene {
     this.pendingDrops.push({ x, y });
   }
 
+  /** After physics: free queued bodies, then run deferred level clear. */
+  private onPostUpdate = (): void => {
+    this.flushDeferredWork();
+    if (this.levelClearPending) {
+      this.levelClearPending = false;
+      this.onLevelClear();
+    }
+  };
+
   private flushDeferredWork = (): void => {
     if (this.pendingDrops.length === 0 && this.pendingDestroy.length === 0) {
       return;
     }
     const drops = this.pendingDrops.splice(0, this.pendingDrops.length);
     for (const d of drops) {
+      // Skip spawns if the level already ended this frame
+      if (this.awaitingAdvance || this.levelClearPending) continue;
       this.spawnPowerUpDrop(d.x, d.y);
     }
     const kill = this.pendingDestroy.splice(0, this.pendingDestroy.length);
@@ -1444,6 +1456,24 @@ export class GameScene extends Phaser.Scene {
       }
     }
   };
+
+  /**
+   * Mark level clear for POST_UPDATE. Never run the full clear path inside a
+   * collision callback (destroys / music / overlay will freeze Arcade).
+   */
+  private requestLevelClear(): void {
+    if (this.awaitingAdvance || this.levelClearPending) return;
+    this.levelClearPending = true;
+    // Stop further ball motion this frame so we don't keep resolving hits
+    for (const b of this.balls.getChildren() as Ball[]) {
+      if (!b.active) continue;
+      const body = b.body as Phaser.Physics.Arcade.Body | null;
+      if (body) {
+        body.enable = false;
+        body.setVelocity(0, 0);
+      }
+    }
+  }
 
   private spawnPowerUpDrop(x: number, y: number): void {
     const def = getLevel(this.levelIndex);
@@ -1558,16 +1588,22 @@ export class GameScene extends Phaser.Scene {
     if (this.awaitingAdvance) return;
     this.awaitingAdvance = true;
     this.pausedForOverlay = true;
+    // Halt Arcade completely — overlay path must not keep simulating hits
+    this.physics.world.pause();
+
     this.powerUpManager.reset();
     this.sfx.levelClear();
 
-    // Freeze balls
+    // Freeze / clear gameplay objects (safe: world is paused)
     for (const b of this.balls.getChildren() as Ball[]) {
       if (b.body) {
         (b.body as Phaser.Physics.Arcade.Body).enable = false;
       }
     }
     this.powerUps.clear(true, true);
+    // Drop any remaining deferred work without spawning new pickups
+    this.pendingDrops.length = 0;
+    this.flushDeferredWork();
 
     let score = (this.registry.get('score') as number) ?? 0;
     const lives = (this.registry.get('lives') as number) ?? START_LIVES;
@@ -1634,6 +1670,7 @@ export class GameScene extends Phaser.Scene {
   private onGameOver(): void {
     this.gameOverFlag = true;
     this.pausedForOverlay = true;
+    this.physics.world.pause();
     this.releaseMouseLock();
     this.sfx.gameOver();
     const score = (this.registry.get('score') as number) ?? 0;
