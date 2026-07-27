@@ -334,8 +334,7 @@ export class GameScene extends Phaser.Scene {
     // Wall hit SFX via world bounds on balls (named handler so we can off() it)
     this.physics.world.on('worldbounds', this.onWorldBounds);
 
-    // Physics runs on Scene UPDATE (after scene.update). Flush deferred
-    // destroys + level-clear on POST_UPDATE so nothing heavy runs mid-collision.
+    // Physics runs on Scene UPDATE. Flush deferred destroys on POST_UPDATE.
     this.events.on(
       Phaser.Scenes.Events.POST_UPDATE,
       this.onPostUpdate,
@@ -353,15 +352,49 @@ export class GameScene extends Phaser.Scene {
       this.registry.set('score', this.registry.get('score'));
     }
 
-    this.events.once('shutdown', () => {
-      this.physics.world.off('worldbounds', this.onWorldBounds);
-      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.onPostUpdate, this);
-      this.flushDeferredWork();
-      Music.stop(this);
-      this.powerUpManager.destroy();
-      this.boardFx.destroy();
-    });
+    // IMPORTANT: ArcadePhysics also listens to SHUTDOWN and nulls `world` first
+    // (registration order). Never assume physics.world exists here.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.teardownScene, this);
   }
+
+  /**
+   * Safe scene teardown. Phaser destroys ArcadePhysics before scene handlers
+   * run, so `this.physics.world` is often already null — unguarded `.off()`
+   * threw and aborted scene.restart(), freezing the game after level clear.
+   */
+  private teardownScene = (): void => {
+    try {
+      this.physics?.world?.off('worldbounds', this.onWorldBounds);
+    } catch {
+      /* world already gone */
+    }
+    try {
+      this.events.off(
+        Phaser.Scenes.Events.POST_UPDATE,
+        this.onPostUpdate,
+        this,
+      );
+    } catch {
+      /* ignore */
+    }
+    this.pendingDestroy.length = 0;
+    this.pendingDrops.length = 0;
+    try {
+      Music.stop(this);
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.powerUpManager?.destroy();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.boardFx?.destroy();
+    } catch {
+      /* ignore */
+    }
+  };
 
   private buildLevel(index: number): void {
     const def = getLevel(index) ?? LEVELS[0]!;
@@ -1895,15 +1928,19 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private advanceToNextLevel(): void {
+    const next = this.levelIndex + 1;
+    this.registry.set('uiOverlay', 'none');
+    // Carry score/lives; restart with next level
+    this.scene.restart({ level: next });
+  }
+
   private handleOverlaySpace(): void {
     this.sfx.tryUnlock();
     const overlay = this.registry.get('uiOverlay') as string;
 
     if (overlay === 'levelComplete') {
-      const next = this.levelIndex + 1;
-      this.registry.set('uiOverlay', 'none');
-      // Carry score/lives; restart with next level
-      this.scene.restart({ level: next });
+      this.advanceToNextLevel();
       return;
     }
 
@@ -1916,18 +1953,13 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Failsafe: clear was requested but overlay never painted
-    if (
-      this.awaitingAdvance &&
-      !this.gameOverFlag &&
-      (overlay === 'none' || !overlay)
-    ) {
+    // Failsafe: clear was requested but overlay never painted / already dismissed
+    if (this.awaitingAdvance && !this.gameOverFlag) {
       const next = this.levelIndex + 1;
       if (next >= levelCount()) {
         this.goToMenu();
       } else {
-        this.registry.set('uiOverlay', 'none');
-        this.scene.restart({ level: next });
+        this.advanceToNextLevel();
       }
       return;
     }
