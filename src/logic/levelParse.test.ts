@@ -42,12 +42,16 @@ describe('authored levels', () => {
     expect(LEVELS.length).toBeGreaterThanOrEqual(25);
   });
 
-  it('nightmare finale levels stay beatable (bottom passages)', () => {
+  it('nightmare finale levels stay beatable (entry passages)', () => {
     const nightmare = LEVELS.slice(-5);
     for (const level of nightmare) {
       const bottom = level.rows[level.rows.length - 1]!;
-      const openOrBreakable = [...bottom].filter((c) => c !== 'X').length;
-      expect(openOrBreakable).toBeGreaterThan(0);
+      const top = level.rows[0]!;
+      const bottomOpen = [...bottom].filter((c) => c !== 'X').length;
+      const topOpen = [...top].filter((c) => c !== 'X').length;
+      // Most finales leave a bottom gap; Serpent Path seals the floor and
+      // opens only at the top (single destroyable entrance).
+      expect(bottomOpen + topOpen).toBeGreaterThan(0);
       const { destructible } = parseLevel(level);
       expect(destructible).toBeGreaterThan(0);
     }

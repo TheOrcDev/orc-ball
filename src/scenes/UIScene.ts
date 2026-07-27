@@ -464,7 +464,7 @@ export class UIScene extends Phaser.Scene {
       subtitle: error
         ? error
         : entries.length === 0
-          ? 'No scores yet — clear all 26 levels!'
+          ? `No scores yet — clear all ${levelCount()} levels!`
           : `Top ${LEADERBOARD_TOP_N} campaign clears`,
       entries,
       hint: 'Press SPACE / TAP  ·  close',

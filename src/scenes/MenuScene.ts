@@ -318,7 +318,7 @@ export class MenuScene extends Phaser.Scene {
       error
         ? error
         : entries.length === 0
-          ? 'No scores yet — clear all 26 levels!'
+          ? `No scores yet — clear all ${levelCount()} levels!`
           : `Top ${LEADERBOARD_TOP_N} campaign clears`,
     );
     body.setText(this.formatBoardLines(entries));
