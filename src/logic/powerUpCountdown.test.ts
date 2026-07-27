@@ -61,12 +61,13 @@ describe('formatSecondsLeft', () => {
 });
 
 describe('buildEffectsHud', () => {
-  it('joins active effects with countdowns', () => {
+  it('stacks active effects vertically with countdowns', () => {
     const hud = buildEffectsHud([
       { label: 'GLUE', remainingMs: 12500, hint: 'launch to free' },
       { label: 'BULLET', remainingMs: 2500 },
     ]);
-    expect(hud.text).toBe('GLUE 13s (launch to free)  ·  BULLET 3s');
+    expect(hud.lines).toEqual(['GLUE 13s', 'BULLET 3s']);
+    expect(hud.text).toBe('GLUE 13s\nBULLET 3s');
     expect(hud.warning).toBe(true);
     expect(hud.minRemainingMs).toBe(2500);
   });
@@ -74,6 +75,7 @@ describe('buildEffectsHud', () => {
   it('empty when nothing active', () => {
     const hud = buildEffectsHud([{ label: 'GLUE', remainingMs: 0 }]);
     expect(hud.text).toBe('');
+    expect(hud.lines).toEqual([]);
     expect(hud.warning).toBe(false);
   });
 });

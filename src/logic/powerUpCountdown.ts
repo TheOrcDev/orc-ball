@@ -54,26 +54,40 @@ export type TimedHudEffect = {
 };
 
 /**
- * Build the HUD effects line with per-effect countdowns.
+ * Build vertical HUD lines with per-effect countdowns (left rail).
  * Returns whether any effect is in the warning window (for blink).
  */
 export function buildEffectsHud(
   effects: readonly TimedHudEffect[],
   warnMs: number = POWERUP_WARN_MS,
-): { text: string; warning: boolean; minRemainingMs: number } {
+): {
+  lines: string[];
+  text: string;
+  warning: boolean;
+  minRemainingMs: number;
+  entries: { label: string; remainingMs: number; line: string }[];
+} {
   const active = effects.filter((e) => e.remainingMs > 0);
   let warning = false;
   let minRemainingMs = Number.POSITIVE_INFINITY;
-  const parts: string[] = [];
+  const entries: { label: string; remainingMs: number; line: string }[] = [];
   for (const e of active) {
     if (isExpiringSoon(e.remainingMs, warnMs)) warning = true;
     minRemainingMs = Math.min(minRemainingMs, e.remainingMs);
     const time = formatSecondsLeft(e.remainingMs);
-    parts.push(e.hint ? `${e.label} ${time} (${e.hint})` : `${e.label} ${time}`);
+    // Compact left-rail lines (no long hints)
+    entries.push({
+      label: e.label,
+      remainingMs: e.remainingMs,
+      line: `${e.label} ${time}`,
+    });
   }
+  const lines = entries.map((e) => e.line);
   return {
-    text: parts.join('  ·  '),
+    lines,
+    text: lines.join('\n'),
     warning,
     minRemainingMs: active.length === 0 ? 0 : minRemainingMs,
+    entries,
   };
 }

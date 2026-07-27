@@ -36,7 +36,8 @@ export class UIScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private livesText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
-  private effectsText!: Phaser.GameObjects.Text;
+  /** Left-rail timed power indicators (one text line each). */
+  private effectLineTexts: Phaser.GameObjects.Text[] = [];
   private overlay?: Phaser.GameObjects.Container;
   private confetti?: Phaser.GameObjects.Particles.ParticleEmitter;
   private victoryPhase: VictoryPhase = 'name';
@@ -64,16 +65,6 @@ export class UIScene extends Phaser.Scene {
     this.levelText = this.add
       .text(WIDTH - 16, 12, 'Level: 1', style)
       .setOrigin(1, 0)
-      .setDepth(10);
-
-    this.effectsText = this.add
-      .text(WIDTH / 2, 36, '', {
-        fontFamily: 'monospace',
-        fontSize: '14px',
-        fontStyle: 'bold',
-        color: '#ffd54f',
-      })
-      .setOrigin(0.5, 0)
       .setDepth(10);
 
     this.refreshFromRegistry();
@@ -148,8 +139,8 @@ export class UIScene extends Phaser.Scene {
     const explode = Boolean(this.registry.get('effectExplode'));
     if (glue || bullet || laser || slow || explode) {
       this.refreshEffects(time);
-    } else if (this.effectsText.alpha !== 1) {
-      this.effectsText.setAlpha(1);
+    } else if (this.effectLineTexts.some((t) => t.visible)) {
+      this.refreshEffects(time);
     }
   }
 
@@ -160,6 +151,40 @@ export class UIScene extends Phaser.Scene {
     this.scoreText.setText(`Score: ${score}`);
     this.livesText.setText(`Lives: ${lives}`);
     this.levelText.setText(`Level: ${level}`);
+  }
+
+  private effectColor(label: string): string {
+    switch (label) {
+      case 'GLUE':
+        return '#26a69a';
+      case 'BULLET':
+        return '#ff7043';
+      case 'LASER':
+        return '#ff5252';
+      case 'SLOW':
+        return '#29b6f6';
+      case 'BLAST':
+        return '#ffc107';
+      default:
+        return '#ffd54f';
+    }
+  }
+
+  private ensureEffectLine(index: number): Phaser.GameObjects.Text {
+    let text = this.effectLineTexts[index];
+    if (text) return text;
+    text = this.add
+      .text(16, 40, '', {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        fontStyle: 'bold',
+        color: '#ffd54f',
+      })
+      .setOrigin(0, 0)
+      .setDepth(10)
+      .setVisible(false);
+    this.effectLineTexts[index] = text;
+    return text;
   }
 
   private refreshEffects(nowMs = this.time.now): void {
@@ -180,7 +205,6 @@ export class UIScene extends Phaser.Scene {
       {
         label: 'GLUE',
         remainingMs: glue ? remainingMs(glueExp, nowMs) : 0,
-        hint: 'launch to free',
       },
       {
         label: 'BULLET',
@@ -189,7 +213,6 @@ export class UIScene extends Phaser.Scene {
       {
         label: 'LASER',
         remainingMs: laser ? remainingMs(laserExp, nowMs) : 0,
-        hint: 'SPACE',
       },
       {
         label: 'SLOW',
@@ -201,18 +224,22 @@ export class UIScene extends Phaser.Scene {
       },
     ]);
 
-    this.effectsText.setText(hud.text);
-    this.effectsText.setAlpha(
-      hud.warning ? expiryBlinkAlpha(nowMs, hud.minRemainingMs) : 1,
-    );
-
-    if (explode) this.effectsText.setColor('#ffc107');
-    else if (laser) this.effectsText.setColor('#ff5252');
-    else if (glue && bullet) this.effectsText.setColor('#ffab40');
-    else if (glue) this.effectsText.setColor('#26a69a');
-    else if (bullet) this.effectsText.setColor('#ff7043');
-    else if (slow) this.effectsText.setColor('#29b6f6');
-    else this.effectsText.setColor('#ffd54f');
+    // Left vertical stack under the score
+    const lineH = 18;
+    const startY = 40;
+    for (let i = 0; i < hud.entries.length; i++) {
+      const entry = hud.entries[i]!;
+      const text = this.ensureEffectLine(i);
+      text
+        .setText(entry.line)
+        .setPosition(16, startY + i * lineH)
+        .setColor(this.effectColor(entry.label))
+        .setAlpha(expiryBlinkAlpha(nowMs, entry.remainingMs))
+        .setVisible(true);
+    }
+    for (let i = hud.entries.length; i < this.effectLineTexts.length; i++) {
+      this.effectLineTexts[i]?.setVisible(false).setText('');
+    }
   }
 
   private maybeUpdateHighScore(): void {
