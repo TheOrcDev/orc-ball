@@ -46,6 +46,10 @@ export const POWERUP_DURATION_BULLET_MS = 12000;
 export const POWERUP_DURATION_LASER_MS = 12000;
 export const POWERUP_DURATION_SLOW_MS = 12000;
 export const POWERUP_DURATION_EXPLODE_MS = 12000;
+/** Last this many ms of a timed power-up: HUD countdown blinks + object flash. */
+export const POWERUP_WARN_MS = 3000;
+/** Base blink half-period while a timed power-up is in its warning window. */
+export const POWERUP_WARN_BLINK_MS = 180;
 /** While SLOW is active, balls run at this fraction of level speed. */
 export const SLOW_SPEED_FACTOR = 0.55;
 export const DEFAULT_DROP_CHANCE = 0.2;

@@ -7,8 +7,14 @@ import {
   POWERUP_DURATION_LASER_MS,
   POWERUP_DURATION_MS,
   POWERUP_DURATION_SLOW_MS,
+  POWERUP_WARN_MS,
 } from '../config';
 import type { PowerUpType } from '../data/types';
+import {
+  expiryBlinkAlpha,
+  isExpiringSoon,
+  remainingMs,
+} from '../logic/powerUpCountdown';
 import {
   applyPowerUp,
   createPowerUpState,
@@ -19,6 +25,16 @@ import {
 import type { Ball } from '../objects/Ball';
 import type { Paddle } from '../objects/Paddle';
 
+export type EffectExpirySnapshot = {
+  sticky: number;
+  fireball: number;
+  laser: number;
+  slow: number;
+  explode: number;
+  expand: number;
+  shrink: number;
+};
+
 export type PowerUpHooks = {
   onMultiball: () => void;
   onLivesChanged: (lives: number) => void;
@@ -27,15 +43,18 @@ export type PowerUpHooks = {
   onBonus?: () => void;
   /** Fired when glue (sticky) expires — launch any stuck balls. */
   onStickyExpired?: () => void;
-  onEffectsChanged?: (effects: {
-    sticky: boolean;
-    fireball: boolean;
-    expand: boolean;
-    shrink: boolean;
-    laser: boolean;
-    slow: boolean;
-    explode: boolean;
-  }) => void;
+  onEffectsChanged?: (
+    effects: {
+      sticky: boolean;
+      fireball: boolean;
+      expand: boolean;
+      shrink: boolean;
+      laser: boolean;
+      slow: boolean;
+      explode: boolean;
+    },
+    expiresAt: EffectExpirySnapshot,
+  ) => void;
   onMultiballVisual?: () => void;
   /** Sync ball speeds after SLOW is applied / cleared. */
   onSlowChanged?: (slow: boolean) => void;
@@ -181,16 +200,83 @@ export class PowerUpManager {
     this.timers.set(effect, timer);
   }
 
+  /** Absolute expiry timestamps (ms) for HUD countdown; 0 when inactive. */
+  getExpirySnapshot(): EffectExpirySnapshot {
+    const at = (effect: TimedEffect): number =>
+      this.state.expiresAt.get(effect) ?? 0;
+    return {
+      sticky: at('STICKY'),
+      fireball: at('FIREBALL'),
+      laser: at('LASER'),
+      slow: at('SLOW'),
+      explode: at('EXPLODE'),
+      expand: at('EXPAND'),
+      shrink: at('SHRINK'),
+    };
+  }
+
+  remainingFor(effect: TimedEffect, nowMs: number): number {
+    return remainingMs(this.state.expiresAt.get(effect), nowMs);
+  }
+
+  /**
+   * Flash paddle / balls in the last seconds of a timed power-up so the
+   * player can see glue, bullet, laser, etc. about to drop.
+   */
+  syncExpiryWarningVisuals(nowMs: number): void {
+    const warn = POWERUP_WARN_MS;
+    const paddleEffects: TimedEffect[] = [
+      'STICKY',
+      'LASER',
+      'EXPAND',
+      'SHRINK',
+    ];
+    let paddleRemaining = Number.POSITIVE_INFINITY;
+    for (const effect of paddleEffects) {
+      const left = this.remainingFor(effect, nowMs);
+      if (isExpiringSoon(left, warn)) {
+        paddleRemaining = Math.min(paddleRemaining, left);
+      }
+    }
+    const paddleAlpha =
+      paddleRemaining === Number.POSITIVE_INFINITY
+        ? 1
+        : expiryBlinkAlpha(nowMs, paddleRemaining);
+    this.paddle.setAlpha(paddleAlpha);
+
+    for (const ball of this.getBalls()) {
+      if (!ball.active) continue;
+      const flashFire =
+        ball.isFireball &&
+        isExpiringSoon(this.remainingFor('FIREBALL', nowMs), warn);
+      const flashBlast =
+        ball.isExplosive &&
+        isExpiringSoon(this.remainingFor('EXPLODE', nowMs), warn);
+      if (!flashFire && !flashBlast) {
+        ball.setAlpha(1);
+        continue;
+      }
+      const ballLeft = Math.min(
+        flashFire ? this.remainingFor('FIREBALL', nowMs) : Infinity,
+        flashBlast ? this.remainingFor('EXPLODE', nowMs) : Infinity,
+      );
+      ball.setAlpha(expiryBlinkAlpha(nowMs, ballLeft));
+    }
+  }
+
   private emitEffects(): void {
-    this.hooks.onEffectsChanged?.({
-      sticky: this.state.sticky,
-      fireball: this.state.fireball,
-      expand: this.state.active.has('EXPAND'),
-      shrink: this.state.active.has('SHRINK'),
-      laser: this.state.laser,
-      slow: this.state.slow,
-      explode: this.state.explode,
-    });
+    this.hooks.onEffectsChanged?.(
+      {
+        sticky: this.state.sticky,
+        fireball: this.state.fireball,
+        expand: this.state.active.has('EXPAND'),
+        shrink: this.state.active.has('SHRINK'),
+        laser: this.state.laser,
+        slow: this.state.slow,
+        explode: this.state.explode,
+      },
+      this.getExpirySnapshot(),
+    );
   }
 
   private clearTimer(effect: TimedEffect): void {
@@ -276,8 +362,12 @@ export class PowerUpManager {
     this.paddle.setGlueLook(false);
     this.paddle.setLaserLook(false);
     this.paddle.clearTint();
+    this.paddle.setAlpha(1);
     this.applyFireballToAll(false);
     this.applyExplodeToAll(false);
+    for (const ball of this.getBalls()) {
+      if (ball.active) ball.setAlpha(1);
+    }
     this.hooks.onSlowChanged?.(false);
     this.emitEffects();
   }

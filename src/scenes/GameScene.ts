@@ -210,6 +210,11 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('effectLaser', false);
     this.registry.set('effectSlow', false);
     this.registry.set('effectExplode', false);
+    this.registry.set('effectGlueExpires', 0);
+    this.registry.set('effectBulletExpires', 0);
+    this.registry.set('effectLaserExpires', 0);
+    this.registry.set('effectSlowExpires', 0);
+    this.registry.set('effectExplodeExpires', 0);
 
     this.lasers = this.physics.add.group({
       classType: Laser,
@@ -229,12 +234,17 @@ export class GameScene extends Phaser.Scene {
         onBonus: () => this.sfx.powerUp(),
         onMalus: () => this.sfx.powerDown(),
         onStickyExpired: () => this.launchStuckBalls(),
-        onEffectsChanged: (effects) => {
+        onEffectsChanged: (effects, expiresAt) => {
           this.registry.set('effectGlue', effects.sticky);
           this.registry.set('effectBullet', effects.fireball);
           this.registry.set('effectLaser', effects.laser);
           this.registry.set('effectSlow', effects.slow);
           this.registry.set('effectExplode', effects.explode);
+          this.registry.set('effectGlueExpires', expiresAt.sticky);
+          this.registry.set('effectBulletExpires', expiresAt.fireball);
+          this.registry.set('effectLaserExpires', expiresAt.laser);
+          this.registry.set('effectSlowExpires', expiresAt.slow);
+          this.registry.set('effectExplodeExpires', expiresAt.explode);
           this.boardFx.setEffects(effects, this.time.now);
         },
         onMultiballVisual: () => {
@@ -1034,6 +1044,11 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('effectLaser', false);
     this.registry.set('effectSlow', false);
     this.registry.set('effectExplode', false);
+    this.registry.set('effectGlueExpires', 0);
+    this.registry.set('effectBulletExpires', 0);
+    this.registry.set('effectLaserExpires', 0);
+    this.registry.set('effectSlowExpires', 0);
+    this.registry.set('effectExplodeExpires', 0);
     this.scene.restart({ level: 0 });
   }
 
@@ -1599,6 +1614,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.paddle.update(time, delta);
+    this.powerUpManager.syncExpiryWarningVisuals(time);
 
     // Stuck balls follow paddle. Auto-launch only when NOT under GLUE
     // (glue requires SPACE / LAUNCH). Initial serve auto-launches after timeout.

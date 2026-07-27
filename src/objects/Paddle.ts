@@ -289,10 +289,12 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
     if (this.glueLook) {
       this.glueDripPhase += dt * 3;
       this.redrawGlueOverlay();
+      this.glueOverlay?.setAlpha(this.alpha);
     }
     if (this.laserLook) {
       this.laserPulse += dt;
       this.redrawLaserOverlay();
+      this.laserOverlay?.setAlpha(this.alpha);
     }
   }
 

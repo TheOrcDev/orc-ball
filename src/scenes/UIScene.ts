@@ -2,6 +2,11 @@ import Phaser from 'phaser';
 import { COLORS, HEIGHT, LEADERBOARD_NAME_KEY, WIDTH } from '../config';
 import { levelCount } from '../data/levels';
 import {
+  buildEffectsHud,
+  expiryBlinkAlpha,
+  remainingMs,
+} from '../logic/powerUpCountdown';
+import {
   LEADERBOARD_NAME_MAX,
   LEADERBOARD_TOP_N,
   sanitizeName,
@@ -120,12 +125,31 @@ export class UIScene extends Phaser.Scene {
       key === 'effectBullet' ||
       key === 'effectLaser' ||
       key === 'effectSlow' ||
-      key === 'effectExplode'
+      key === 'effectExplode' ||
+      key === 'effectGlueExpires' ||
+      key === 'effectBulletExpires' ||
+      key === 'effectLaserExpires' ||
+      key === 'effectSlowExpires' ||
+      key === 'effectExplodeExpires'
     ) {
-      this.refreshEffects();
+      this.refreshEffects(this.time.now);
     }
     if (key === 'uiOverlay') {
       this.showOverlay((value as OverlayMode) ?? 'none');
+    }
+  }
+
+  update(time: number): void {
+    // Live countdown + blink while any timed power is active
+    const glue = Boolean(this.registry.get('effectGlue'));
+    const bullet = Boolean(this.registry.get('effectBullet'));
+    const laser = Boolean(this.registry.get('effectLaser'));
+    const slow = Boolean(this.registry.get('effectSlow'));
+    const explode = Boolean(this.registry.get('effectExplode'));
+    if (glue || bullet || laser || slow || explode) {
+      this.refreshEffects(time);
+    } else if (this.effectsText.alpha !== 1) {
+      this.effectsText.setAlpha(1);
     }
   }
 
@@ -138,19 +162,50 @@ export class UIScene extends Phaser.Scene {
     this.levelText.setText(`Level: ${level}`);
   }
 
-  private refreshEffects(): void {
+  private refreshEffects(nowMs = this.time.now): void {
     const glue = Boolean(this.registry.get('effectGlue'));
     const bullet = Boolean(this.registry.get('effectBullet'));
     const laser = Boolean(this.registry.get('effectLaser'));
     const slow = Boolean(this.registry.get('effectSlow'));
     const explode = Boolean(this.registry.get('effectExplode'));
-    const parts: string[] = [];
-    if (glue) parts.push('GLUE (launch to free)');
-    if (bullet) parts.push('BULLET');
-    if (laser) parts.push('LASER (SPACE)');
-    if (slow) parts.push('SLOW');
-    if (explode) parts.push('BLAST');
-    this.effectsText.setText(parts.join('  ·  '));
+
+    const glueExp = (this.registry.get('effectGlueExpires') as number) ?? 0;
+    const bulletExp = (this.registry.get('effectBulletExpires') as number) ?? 0;
+    const laserExp = (this.registry.get('effectLaserExpires') as number) ?? 0;
+    const slowExp = (this.registry.get('effectSlowExpires') as number) ?? 0;
+    const explodeExp =
+      (this.registry.get('effectExplodeExpires') as number) ?? 0;
+
+    const hud = buildEffectsHud([
+      {
+        label: 'GLUE',
+        remainingMs: glue ? remainingMs(glueExp, nowMs) : 0,
+        hint: 'launch to free',
+      },
+      {
+        label: 'BULLET',
+        remainingMs: bullet ? remainingMs(bulletExp, nowMs) : 0,
+      },
+      {
+        label: 'LASER',
+        remainingMs: laser ? remainingMs(laserExp, nowMs) : 0,
+        hint: 'SPACE',
+      },
+      {
+        label: 'SLOW',
+        remainingMs: slow ? remainingMs(slowExp, nowMs) : 0,
+      },
+      {
+        label: 'BLAST',
+        remainingMs: explode ? remainingMs(explodeExp, nowMs) : 0,
+      },
+    ]);
+
+    this.effectsText.setText(hud.text);
+    this.effectsText.setAlpha(
+      hud.warning ? expiryBlinkAlpha(nowMs, hud.minRemainingMs) : 1,
+    );
+
     if (explode) this.effectsText.setColor('#ffc107');
     else if (laser) this.effectsText.setColor('#ff5252');
     else if (glue && bullet) this.effectsText.setColor('#ffab40');
