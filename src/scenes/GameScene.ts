@@ -1429,12 +1429,19 @@ export class GameScene extends Phaser.Scene {
     this.pendingDrops.push({ x, y });
   }
 
-  /** After physics: free queued bodies, then run deferred level clear. */
+  /**
+   * Phaser order: PRE_UPDATE → UPDATE (physics!) → scene.update → POST_UPDATE.
+   * Flush destroys here, and pause the world once clear is pending so the next
+   * frame cannot keep simulating into a finished board.
+   */
   private onPostUpdate = (): void => {
     this.flushDeferredWork();
-    if (this.levelClearPending) {
-      this.levelClearPending = false;
-      this.onLevelClear();
+    if (this.levelClearPending && !this.physics.world.isPaused) {
+      try {
+        this.physics.world.pause();
+      } catch {
+        /* ignore */
+      }
     }
   };
 
@@ -1444,7 +1451,7 @@ export class GameScene extends Phaser.Scene {
     }
     const drops = this.pendingDrops.splice(0, this.pendingDrops.length);
     for (const d of drops) {
-      // Skip spawns if the level already ended this frame
+      // Skip spawns if the level already ended
       if (this.awaitingAdvance || this.levelClearPending) continue;
       this.spawnPowerUpDrop(d.x, d.y);
     }
@@ -1452,27 +1459,35 @@ export class GameScene extends Phaser.Scene {
     for (const go of kill) {
       // Already disabled; full destroy is safe outside the collision loop
       if (go && (go as Phaser.GameObjects.GameObject).scene) {
-        go.destroy();
+        try {
+          go.destroy();
+        } catch {
+          // Ignore double-destroy during scene teardown
+        }
       }
     }
   };
 
   /**
-   * Mark level clear for POST_UPDATE. Never run the full clear path inside a
-   * collision callback (destroys / music / overlay will freeze Arcade).
+   * Schedule level clear for the *next* frame. Must not pause/destroy/UI from
+   * inside a collision or even the same POST_UPDATE as the killing blow —
+   * that still races Arcade's world.postUpdate and freezes the game.
    */
   private requestLevelClear(): void {
     if (this.awaitingAdvance || this.levelClearPending) return;
     this.levelClearPending = true;
-    // Stop further ball motion this frame so we don't keep resolving hits
+    this.awaitingAdvance = true;
+    this.pausedForOverlay = true;
+    // Zero velocities only — do NOT disable bodies mid world.step
     for (const b of this.balls.getChildren() as Ball[]) {
       if (!b.active) continue;
       const body = b.body as Phaser.Physics.Arcade.Body | null;
-      if (body) {
-        body.enable = false;
-        body.setVelocity(0, 0);
-      }
+      if (body?.enable) body.setVelocity(0, 0);
     }
+    // Next frame (not 0ms — that can still fire in the same UPDATE tick as physics)
+    this.time.delayedCall(1, () => {
+      this.finishLevelClear();
+    });
   }
 
   private spawnPowerUpDrop(x: number, y: number): void {
@@ -1584,56 +1599,103 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private onLevelClear(): void {
-    if (this.awaitingAdvance) return;
-    this.awaitingAdvance = true;
+  /**
+   * Runs one frame after the last brick (via delayedCall). World is not mid-step.
+   * Show overlay first so a later failure cannot leave the player with a black freeze.
+   */
+  private finishLevelClear(): void {
+    if (!this.sys.isActive()) return;
+    this.levelClearPending = false;
     this.pausedForOverlay = true;
-    // Halt Arcade completely — overlay path must not keep simulating hits
-    this.physics.world.pause();
+    this.awaitingAdvance = true;
 
-    this.powerUpManager.reset();
-    this.sfx.levelClear();
+    // Safe now: not inside world.step / world.postUpdate
+    try {
+      this.physics.world.pause();
+    } catch {
+      /* ignore */
+    }
 
-    // Freeze / clear gameplay objects (safe: world is paused)
+    // Stop balls without mass-destroying mid-loop
     for (const b of this.balls.getChildren() as Ball[]) {
-      if (b.body) {
-        (b.body as Phaser.Physics.Arcade.Body).enable = false;
+      const body = b.body as Phaser.Physics.Arcade.Body | null;
+      if (body) {
+        body.enable = false;
+        body.setVelocity(0, 0);
       }
     }
-    this.powerUps.clear(true, true);
-    // Drop any remaining deferred work without spawning new pickups
+
+    // Discard deferred pickups; flush queued destroys quietly
     this.pendingDrops.length = 0;
-    this.flushDeferredWork();
+    try {
+      this.flushDeferredWork();
+    } catch {
+      this.pendingDestroy.length = 0;
+    }
+
+    try {
+      this.powerUpManager.reset();
+    } catch {
+      /* ignore */
+    }
+    // Soft-clear falling caps (avoid group.clear during weird states)
+    for (const pu of this.powerUps.getChildren() as PowerUp[]) {
+      this.queueDestroy(pu);
+    }
+    try {
+      this.flushDeferredWork();
+    } catch {
+      this.pendingDestroy.length = 0;
+    }
 
     let score = (this.registry.get('score') as number) ?? 0;
     const lives = (this.registry.get('lives') as number) ?? START_LIVES;
-
-    // Level-clear sting; next level restarts scene → playForLevel picks new track
-    Music.playLevelClear(this);
-
-    this.releaseMouseLock();
-
     const next = this.levelIndex + 1;
-    if (next >= levelCount()) {
-      // Campaign complete — award clear + remaining-lives bonuses, then celebrate
-      const clearBonus = SCORE_VICTORY_CLEAR;
-      const lifeBonus = Math.max(0, lives) * SCORE_VICTORY_LIFE_BONUS;
-      this.registry.set('victoryClearBonus', clearBonus);
-      this.registry.set('victoryLifeBonus', lifeBonus);
-      this.addScore(clearBonus + lifeBonus);
-      score = (this.registry.get('score') as number) ?? score;
+    const isVictory = next >= levelCount();
 
+    // Overlay FIRST — player must always see a way forward
+    try {
+      if (isVictory) {
+        const clearBonus = SCORE_VICTORY_CLEAR;
+        const lifeBonus = Math.max(0, lives) * SCORE_VICTORY_LIFE_BONUS;
+        this.registry.set('victoryClearBonus', clearBonus);
+        this.registry.set('victoryLifeBonus', lifeBonus);
+        this.addScore(clearBonus + lifeBonus);
+        score = (this.registry.get('score') as number) ?? score;
+        this.gameOverFlag = true;
+        this.setUiOverlay('victory');
+      } else {
+        this.registry.set('victoryClearBonus', 0);
+        this.registry.set('victoryLifeBonus', 0);
+        this.setUiOverlay('levelComplete');
+      }
+    } catch {
+      // Last resort so input path can still advance
+      this.registry.set('uiOverlay', isVictory ? 'victory' : 'levelComplete');
+    }
+
+    // Audio / persistence after UI (non-critical)
+    try {
+      this.sfx.levelClear();
+      if (isVictory) this.sfx.victory();
+    } catch {
+      /* ignore */
+    }
+    try {
+      Music.playLevelClear(this);
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.releaseMouseLock();
+    } catch {
+      /* ignore */
+    }
+    try {
       saveLevelCleared(this.levelIndex, score, lives);
       this.registry.set('highScore', loadProgress().highScore);
-      this.gameOverFlag = true; // SPACE / tap → menu
-      this.sfx.victory();
-      this.setUiOverlay('victory');
-    } else {
-      this.registry.set('victoryClearBonus', 0);
-      this.registry.set('victoryLifeBonus', 0);
-      saveLevelCleared(this.levelIndex, score, lives);
-      this.registry.set('highScore', loadProgress().highScore);
-      this.setUiOverlay('levelComplete');
+    } catch {
+      /* ignore */
     }
   }
 
@@ -1706,7 +1768,8 @@ export class GameScene extends Phaser.Scene {
 
     this.boardFx.update(time, delta);
 
-    if (this.pausedForOverlay) {
+    if (this.pausedForOverlay || this.awaitingAdvance) {
+      // Level-clear / game-over: only advance input. Failsafe if UI never painted.
       if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
         this.handleOverlaySpace();
       }
@@ -1812,6 +1875,22 @@ export class GameScene extends Phaser.Scene {
         if (!ui.tryAdvanceVictory()) return;
       }
       this.goToMenu();
+      return;
+    }
+
+    // Failsafe: clear was requested but overlay never painted
+    if (
+      this.awaitingAdvance &&
+      !this.gameOverFlag &&
+      (overlay === 'none' || !overlay)
+    ) {
+      const next = this.levelIndex + 1;
+      if (next >= levelCount()) {
+        this.goToMenu();
+      } else {
+        this.registry.set('uiOverlay', 'none');
+        this.scene.restart({ level: next });
+      }
       return;
     }
 
