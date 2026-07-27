@@ -132,6 +132,18 @@ export class GameScene extends Phaser.Scene {
   private mouseLocked = false;
   private lockedAimX = WIDTH / 2;
   private mouseUnlockAt = 0;
+  /**
+   * Destroying Arcade bodies mid-collision freezes Phaser's world step.
+   * Queue full destroys (and power-up drops) until after physics for this frame.
+   */
+  private pendingDestroy: Phaser.GameObjects.GameObject[] = [];
+  private pendingDrops: { x: number; y: number }[] = [];
+  private readonly onWorldBounds = (body: Phaser.Physics.Arcade.Body): void => {
+    const go = body.gameObject;
+    if (go instanceof Ball && !go.stuckToPaddle) {
+      this.sfx.wallHit();
+    }
+  };
   private desktopHint?: Phaser.GameObjects.Text;
   private readonly onPointerLockChange = (): void =>
     this.handlePointerLockChange();
@@ -310,15 +322,15 @@ export class GameScene extends Phaser.Scene {
       this,
     );
 
-    // Wall hit SFX via world bounds on balls
-    this.physics.world.on(
-      'worldbounds',
-      (body: Phaser.Physics.Arcade.Body) => {
-        const go = body.gameObject;
-        if (go instanceof Ball && !go.stuckToPaddle) {
-          this.sfx.wallHit();
-        }
-      },
+    // Wall hit SFX via world bounds on balls (named handler so we can off() it)
+    this.physics.world.on('worldbounds', this.onWorldBounds);
+
+    // Physics runs on Scene UPDATE (after scene.update). Flush deferred
+    // destroys on POST_UPDATE so bodies are never freed mid-collision.
+    this.events.on(
+      Phaser.Scenes.Events.POST_UPDATE,
+      this.flushDeferredWork,
+      this,
     );
 
     this.buildLevel(this.levelIndex);
@@ -332,7 +344,14 @@ export class GameScene extends Phaser.Scene {
       this.registry.set('score', this.registry.get('score'));
     }
 
-    this.events.on('shutdown', () => {
+    this.events.once('shutdown', () => {
+      this.physics.world.off('worldbounds', this.onWorldBounds);
+      this.events.off(
+        Phaser.Scenes.Events.POST_UPDATE,
+        this.flushDeferredWork,
+        this,
+      );
+      this.flushDeferredWork();
       Music.stop(this);
       this.powerUpManager.destroy();
       this.boardFx.destroy();
@@ -1139,12 +1158,12 @@ export class GameScene extends Phaser.Scene {
 
     // Lasers damage HP bricks; bounce off / ignore indestructible
     if (brick.isIndestructible) {
-      laser.destroy();
+      this.queueDestroy(laser);
       this.sfx.brickHit(3);
       return;
     }
 
-    laser.destroy();
+    this.queueDestroy(laser);
     const color = brick.tintColor;
     const result = brick.takeHit(false);
     if (result.damaged && !result.destroyed) {
@@ -1158,8 +1177,8 @@ export class GameScene extends Phaser.Scene {
       this.breakEmitter.setParticleTint(color);
       this.breakEmitter.explode(8, brick.x, brick.y);
       this.boardFx.crackleAt(brick.x, brick.y);
-      this.maybeDropPowerUp(brick.x, brick.y);
-      brick.destroy();
+      this.queuePowerUpDrop(brick.x, brick.y);
+      this.queueDestroy(brick);
       if (this.destructibleRemaining <= 0) {
         this.onLevelClear();
       }
@@ -1377,12 +1396,56 @@ export class GameScene extends Phaser.Scene {
     this.syncAllBallSpeeds();
 
     if (opts.dropPowerUp) {
-      this.maybeDropPowerUp(brick.x, brick.y);
+      this.queuePowerUpDrop(brick.x, brick.y);
     }
-    brick.destroy();
+    this.queueDestroy(brick);
   }
 
-  private maybeDropPowerUp(x: number, y: number): void {
+  /**
+   * Disable a body immediately (safe mid-collision) and fully destroy after
+   * the physics step. Prevents Arcade world freezes.
+   */
+  private queueDestroy(go: Phaser.GameObjects.GameObject): void {
+    if (!go) return;
+    if ('setActive' in go) {
+      (go as Phaser.GameObjects.GameObject & { setActive: (v: boolean) => void }).setActive(false);
+    }
+    if ('setVisible' in go) {
+      (go as Phaser.GameObjects.GameObject & { setVisible: (v: boolean) => void }).setVisible(false);
+    }
+    const body = (
+      go as Phaser.GameObjects.GameObject & {
+        body?: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | null;
+      }
+    ).body;
+    if (body) body.enable = false;
+    if (!this.pendingDestroy.includes(go)) {
+      this.pendingDestroy.push(go);
+    }
+  }
+
+  private queuePowerUpDrop(x: number, y: number): void {
+    this.pendingDrops.push({ x, y });
+  }
+
+  private flushDeferredWork = (): void => {
+    if (this.pendingDrops.length === 0 && this.pendingDestroy.length === 0) {
+      return;
+    }
+    const drops = this.pendingDrops.splice(0, this.pendingDrops.length);
+    for (const d of drops) {
+      this.spawnPowerUpDrop(d.x, d.y);
+    }
+    const kill = this.pendingDestroy.splice(0, this.pendingDestroy.length);
+    for (const go of kill) {
+      // Already disabled; full destroy is safe outside the collision loop
+      if (go && (go as Phaser.GameObjects.GameObject).scene) {
+        go.destroy();
+      }
+    }
+  };
+
+  private spawnPowerUpDrop(x: number, y: number): void {
     const def = getLevel(this.levelIndex);
     if (!def) return;
     const type = rollPowerUpDrop(def.dropChance, def.dropTable);
@@ -1404,9 +1467,10 @@ export class GameScene extends Phaser.Scene {
       if (!power || !power.active) return;
       const type = power.powerType as PowerUpType;
       const label = POWERUP_LABEL[type];
+      // Disable immediately so we don't re-collect this frame
+      this.queueDestroy(power);
       this.powerUpManager.collect(type);
       this.showPowerUpToast(label, power.x, power.y);
-      power.destroy();
     };
 
   /** Floating label when a power-up is collected (GLUE / BULLET / …). */
@@ -1643,25 +1707,27 @@ export class GameScene extends Phaser.Scene {
       this.launchBtn.setAlpha(waiting ? 1 : 0.55);
     }
 
-    // Cull lasers past top of screen
-    for (const laser of this.lasers.getChildren() as Laser[]) {
-      if (laser.active && laser.y < -20) laser.destroy();
+    // Snapshot children before any destroy — mutating groups mid-loop is unsafe
+    const lasers = this.lasers.getChildren() as Laser[];
+    for (const laser of lasers) {
+      if (laser.active && laser.y < -20) this.queueDestroy(laser);
     }
 
     // Maintain constant speed + fire trail
-    for (const ball of this.balls.getChildren() as Ball[]) {
+    const balls = this.balls.getChildren() as Ball[];
+    for (const ball of balls) {
       if (!ball.active) continue;
       ball.maintainSpeed();
 
       // Bottom death
       if (!ball.stuckToPaddle && ball.y > HEIGHT + 20) {
-        ball.destroy();
+        this.queueDestroy(ball);
       }
     }
 
     // Fire trail on fireballs
     if (this.fireTrailEmitter) {
-      const fireBall = (this.balls.getChildren() as Ball[]).find(
+      const fireBall = balls.find(
         (b) => b.active && b.isFireball && !b.stuckToPaddle,
       );
       if (fireBall) {
@@ -1674,10 +1740,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Sync drop letters + cull fallen power-ups
-    for (const pu of this.powerUps.getChildren() as PowerUp[]) {
+    const powerUps = this.powerUps.getChildren() as PowerUp[];
+    for (const pu of powerUps) {
       if (!pu.active) continue;
       pu.syncLabel();
-      if (pu.y > HEIGHT + 40) pu.destroy();
+      if (pu.y > HEIGHT + 40) this.queueDestroy(pu);
     }
 
     // Life lost when no balls remain
