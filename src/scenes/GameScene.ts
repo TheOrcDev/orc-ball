@@ -138,8 +138,11 @@ export class GameScene extends Phaser.Scene {
    */
   private pendingDestroy: Phaser.GameObjects.GameObject[] = [];
   private pendingDrops: { x: number; y: number }[] = [];
-  /** Level clear must not run inside a collision callback — defer to POST_UPDATE. */
+  /** Level clear must not run inside a collision callback. */
   private levelClearPending = false;
+  /** Cap break FX per frame — fireball/blast wipes can stall the main thread. */
+  private breakFxThisFrame = 0;
+  private static readonly MAX_BREAK_FX_PER_FRAME = 5;
   private readonly onWorldBounds = (body: Phaser.Physics.Arcade.Body): void => {
     const go = body.gameObject;
     if (go instanceof Ball && !go.stuckToPaddle) {
@@ -159,6 +162,7 @@ export class GameScene extends Phaser.Scene {
     this.pausedForOverlay = false;
     this.awaitingAdvance = false;
     this.levelClearPending = false;
+    this.breakFxThisFrame = 0;
     this.gameOverFlag = false;
     this.isPaused = false;
     this.pauseOverlay = undefined;
@@ -1174,11 +1178,18 @@ export class GameScene extends Phaser.Scene {
     if (result.destroyed) {
       this.destructibleRemaining = Math.max(0, this.destructibleRemaining - 1);
       this.addScore(SCORE_PER_BREAK);
-      this.sfx.brickBreak();
-      this.breakEmitter.setParticleTint(color);
-      this.breakEmitter.explode(8, brick.x, brick.y);
-      this.boardFx.crackleAt(brick.x, brick.y);
-      this.queuePowerUpDrop(brick.x, brick.y);
+      const fxBudget =
+        this.breakFxThisFrame < GameScene.MAX_BREAK_FX_PER_FRAME;
+      this.breakFxThisFrame += 1;
+      if (fxBudget) {
+        this.sfx.brickBreak();
+        this.breakEmitter.setParticleTint(color);
+        this.breakEmitter.explode(8, brick.x, brick.y);
+        this.boardFx.crackleAt(brick.x, brick.y);
+      }
+      if (!this.awaitingAdvance && !this.levelClearPending) {
+        this.queuePowerUpDrop(brick.x, brick.y);
+      }
       this.queueDestroy(brick);
       if (this.destructibleRemaining <= 0) {
         this.requestLevelClear();
@@ -1384,19 +1395,26 @@ export class GameScene extends Phaser.Scene {
       this.addScore(SCORE_PER_X_BREAK);
     }
 
-    this.sfx.brickBreak();
-    this.breakEmitter.setParticleTint(color);
-    this.breakEmitter.explode(opts.heavyFx ? 18 : 12, brick.x, brick.y);
-    this.boardFx.crackleAt(brick.x, brick.y);
-    if (!opts.heavyFx) {
-      this.cameras.main.shake(100, 0.004);
+    // Throttle FX: wiping a full board in one frame (fireball/blast) used to
+    // fire dozens of shakes + particle bursts and lock the main thread.
+    const fxBudget = this.breakFxThisFrame < GameScene.MAX_BREAK_FX_PER_FRAME;
+    this.breakFxThisFrame += 1;
+    if (fxBudget) {
+      this.sfx.brickBreak();
+      this.breakEmitter.setParticleTint(color);
+      this.breakEmitter.explode(opts.heavyFx ? 14 : 8, brick.x, brick.y);
+      this.boardFx.crackleAt(brick.x, brick.y);
+      if (!opts.heavyFx) {
+        this.cameras.main.shake(80, 0.003);
+      }
     }
 
     // Speed ramp on base level speed (SLOW reapplies on top)
     this.ballSpeed = Math.min(MAX_BALL_SPEED, this.ballSpeed + BALL_SPEED_RAMP);
     this.syncAllBallSpeeds();
 
-    if (opts.dropPowerUp) {
+    // No new pickups once the level is won
+    if (opts.dropPowerUp && !this.awaitingAdvance && !this.levelClearPending) {
       this.queuePowerUpDrop(brick.x, brick.y);
     }
     this.queueDestroy(brick);
@@ -1431,10 +1449,10 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Phaser order: PRE_UPDATE → UPDATE (physics!) → scene.update → POST_UPDATE.
-   * Flush destroys here, and pause the world once clear is pending so the next
-   * frame cannot keep simulating into a finished board.
+   * Flush a limited number of destroys; never mass-destroy on level clear.
    */
   private onPostUpdate = (): void => {
+    this.breakFxThisFrame = 0;
     this.flushDeferredWork();
     if (this.levelClearPending && !this.physics.world.isPaused) {
       try {
@@ -1446,48 +1464,65 @@ export class GameScene extends Phaser.Scene {
   };
 
   private flushDeferredWork = (): void => {
+    // Level already won — scene restart will dispose everything. Mass
+    // destroy() of every brick here is a known hard freeze after fireball wipes.
+    if (this.awaitingAdvance || this.levelClearPending) {
+      this.pendingDrops.length = 0;
+      this.pendingDestroy.length = 0;
+      return;
+    }
     if (this.pendingDrops.length === 0 && this.pendingDestroy.length === 0) {
       return;
     }
     const drops = this.pendingDrops.splice(0, this.pendingDrops.length);
     for (const d of drops) {
-      // Skip spawns if the level already ended
-      if (this.awaitingAdvance || this.levelClearPending) continue;
       this.spawnPowerUpDrop(d.x, d.y);
     }
-    const kill = this.pendingDestroy.splice(0, this.pendingDestroy.length);
+    // Cap destroys per frame to keep the main thread responsive
+    const budget = 24;
+    const kill = this.pendingDestroy.splice(0, budget);
     for (const go of kill) {
-      // Already disabled; full destroy is safe outside the collision loop
       if (go && (go as Phaser.GameObjects.GameObject).scene) {
         try {
           go.destroy();
         } catch {
-          // Ignore double-destroy during scene teardown
+          /* ignore */
         }
       }
     }
   };
 
   /**
-   * Schedule level clear for the *next* frame. Must not pause/destroy/UI from
-   * inside a collision or even the same POST_UPDATE as the killing blow —
-   * that still races Arcade's world.postUpdate and freezes the game.
+   * Schedule level clear outside Phaser's step entirely (double rAF).
+   * delayedCall can still interleave with the Clock on the physics UPDATE event.
    */
   private requestLevelClear(): void {
     if (this.awaitingAdvance || this.levelClearPending) return;
     this.levelClearPending = true;
     this.awaitingAdvance = true;
     this.pausedForOverlay = true;
-    // Zero velocities only — do NOT disable bodies mid world.step
+    // Drop all deferred work — do not destroy the board in a storm
+    this.pendingDrops.length = 0;
+    this.pendingDestroy.length = 0;
+
     for (const b of this.balls.getChildren() as Ball[]) {
       if (!b.active) continue;
       const body = b.body as Phaser.Physics.Arcade.Body | null;
       if (body?.enable) body.setVelocity(0, 0);
     }
-    // Next frame (not 0ms — that can still fire in the same UPDATE tick as physics)
-    this.time.delayedCall(1, () => {
+
+    const run = (): void => {
+      if (!this.sys?.isActive()) return;
       this.finishLevelClear();
-    });
+    };
+    // Escape the Phaser frame completely
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(run);
+      });
+    } else {
+      setTimeout(run, 32);
+    }
   }
 
   private spawnPowerUpDrop(x: number, y: number): void {
@@ -1600,23 +1635,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Runs one frame after the last brick (via delayedCall). World is not mid-step.
-   * Show overlay first so a later failure cannot leave the player with a black freeze.
+   * Minimal clear: pause + paint overlay. No mass destroy (restart cleans up).
+   * Runs via double-rAF so we are fully outside Phaser's physics step.
    */
   private finishLevelClear(): void {
     if (!this.sys.isActive()) return;
     this.levelClearPending = false;
     this.pausedForOverlay = true;
     this.awaitingAdvance = true;
+    this.pendingDrops.length = 0;
+    this.pendingDestroy.length = 0;
 
-    // Safe now: not inside world.step / world.postUpdate
     try {
       this.physics.world.pause();
     } catch {
       /* ignore */
     }
 
-    // Stop balls without mass-destroying mid-loop
     for (const b of this.balls.getChildren() as Ball[]) {
       const body = b.body as Phaser.Physics.Arcade.Body | null;
       if (body) {
@@ -1624,28 +1659,19 @@ export class GameScene extends Phaser.Scene {
         body.setVelocity(0, 0);
       }
     }
-
-    // Discard deferred pickups; flush queued destroys quietly
-    this.pendingDrops.length = 0;
-    try {
-      this.flushDeferredWork();
-    } catch {
-      this.pendingDestroy.length = 0;
+    // Hide remaining bricks/power-ups without destroy storms
+    for (const br of this.bricks.getChildren() as Brick[]) {
+      if (!br.active) continue;
+      br.setActive(false);
+      br.setVisible(false);
+      const body = br.body as Phaser.Physics.Arcade.StaticBody | null;
+      if (body) body.enable = false;
     }
-
-    try {
-      this.powerUpManager.reset();
-    } catch {
-      /* ignore */
-    }
-    // Soft-clear falling caps (avoid group.clear during weird states)
     for (const pu of this.powerUps.getChildren() as PowerUp[]) {
-      this.queueDestroy(pu);
-    }
-    try {
-      this.flushDeferredWork();
-    } catch {
-      this.pendingDestroy.length = 0;
+      pu.setActive(false);
+      pu.setVisible(false);
+      const body = pu.body as Phaser.Physics.Arcade.Body | null;
+      if (body) body.enable = false;
     }
 
     let score = (this.registry.get('score') as number) ?? 0;
@@ -1653,7 +1679,7 @@ export class GameScene extends Phaser.Scene {
     const next = this.levelIndex + 1;
     const isVictory = next >= levelCount();
 
-    // Overlay FIRST — player must always see a way forward
+    // Overlay first — always
     try {
       if (isVictory) {
         const clearBonus = SCORE_VICTORY_CLEAR;
@@ -1670,32 +1696,44 @@ export class GameScene extends Phaser.Scene {
         this.setUiOverlay('levelComplete');
       }
     } catch {
-      // Last resort so input path can still advance
       this.registry.set('uiOverlay', isVictory ? 'victory' : 'levelComplete');
     }
 
-    // Audio / persistence after UI (non-critical)
-    try {
-      this.sfx.levelClear();
-      if (isVictory) this.sfx.victory();
-    } catch {
-      /* ignore */
-    }
-    try {
-      Music.playLevelClear(this);
-    } catch {
-      /* ignore */
-    }
-    try {
-      this.releaseMouseLock();
-    } catch {
-      /* ignore */
-    }
-    try {
-      saveLevelCleared(this.levelIndex, score, lives);
-      this.registry.set('highScore', loadProgress().highScore);
-    } catch {
-      /* ignore */
+    // Non-critical work after UI paints (another macrotask)
+    const afterUi = (): void => {
+      if (!this.sys?.isActive()) return;
+      try {
+        this.powerUpManager.reset();
+      } catch {
+        /* ignore */
+      }
+      try {
+        this.sfx.levelClear();
+        if (isVictory) this.sfx.victory();
+      } catch {
+        /* ignore */
+      }
+      try {
+        Music.playLevelClear(this);
+      } catch {
+        /* ignore */
+      }
+      try {
+        this.releaseMouseLock();
+      } catch {
+        /* ignore */
+      }
+      try {
+        saveLevelCleared(this.levelIndex, score, lives);
+        this.registry.set('highScore', loadProgress().highScore);
+      } catch {
+        /* ignore */
+      }
+    };
+    if (typeof setTimeout === 'function') {
+      setTimeout(afterUi, 0);
+    } else {
+      afterUi();
     }
   }
 
@@ -1766,16 +1804,16 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.boardFx.update(time, delta);
-
     if (this.pausedForOverlay || this.awaitingAdvance) {
-      // Level-clear / game-over: only advance input. Failsafe if UI never painted.
+      // Level-clear / game-over: only advance input (skip board FX work)
       if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
         this.handleOverlaySpace();
       }
       // Touch: pointerdown already advances overlay
       return;
     }
+
+    this.boardFx.update(time, delta);
 
     this.paddle.update(time, delta);
     this.powerUpManager.syncExpiryWarningVisuals(time);
