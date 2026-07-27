@@ -50,7 +50,7 @@ const DROPS_BRUTAL: Partial<Record<PowerUpType, number>> = {
 };
 
 /**
- * 27 data-driven levels. Layouts use '.' empty, '1'–'3' HP, 'X' indestructible.
+ * 28 data-driven levels. Layouts use '.' empty, '1'–'3' HP, 'X' indestructible.
  * Speed and denser X / HP3 ramp as the campaign progresses.
  */
 export const LEVELS: LevelDef[] = [
@@ -532,6 +532,26 @@ export const LEVELS: LevelDef[] = [
       'X33333333X',
       // solid stone floor — no approach from below
       'XXXXXXXXXX',
+    ],
+  },
+
+  // ─── finale ─────────────────────────────────────────────────────────
+  {
+    // Big red "ORC" wordmark — pure HP-3 letters, open field.
+    name: 'ORC',
+    ballSpeed: 430,
+    dropChance: 0.5,
+    dropTable: DROPS_BRUTAL,
+    rows: [
+      // O   R   C  (11 cols: 3 + gap + 3 + gap + 3)
+      '333.333.333',
+      '3.3.3.3.3..',
+      '3.3.3.3.3..',
+      '3.3.333.3..',
+      '3.3.33..3..',
+      '3.3.3.3.3..',
+      '3.3.3.3.3..',
+      '333.3.3.333',
     ],
   },
 ];
