@@ -62,9 +62,24 @@ export function isInstantEffect(t: PowerUpType): boolean {
 }
 
 /**
+ * Stack another full duration onto an effect.
+ * Active remaining time is kept: 2× laser = 12s + 12s, not a reset to 12s.
+ */
+export function stackedExpiry(
+  expiresAt: ReadonlyMap<TimedEffect, number>,
+  effect: TimedEffect,
+  nowMs: number,
+  durationMs: number,
+): number {
+  const current = expiresAt.get(effect);
+  const base = current !== undefined && current > nowMs ? current : nowMs;
+  return base + durationMs;
+}
+
+/**
  * Apply a power-up to pure state. Returns side-effect flags for the game layer.
- * Timed re-collect refreshes expiry; no double-apply of scale.
- * EXPAND ↔ SHRINK are mutually exclusive.
+ * Timed re-collect stacks duration onto remaining time; no double-apply of scale.
+ * EXPAND ↔ SHRINK are mutually exclusive (swap replaces the other).
  */
 export function applyPowerUp(
   state: PowerUpState,
@@ -112,9 +127,10 @@ export function applyPowerUp(
     };
   }
 
-  // Timed effects
+  // Timed effects — stack duration onto any remaining time
   const wasActive = next.active.has(type as TimedEffect);
-  const expiry = nowMs + durationMs;
+  const stack = (effect: TimedEffect): number =>
+    stackedExpiry(next.expiresAt, effect, nowMs, durationMs);
 
   if (type === 'EXPAND') {
     if (next.active.has('SHRINK')) {
@@ -122,7 +138,7 @@ export function applyPowerUp(
       next.expiresAt.delete('SHRINK');
     }
     next.active.add('EXPAND');
-    next.expiresAt.set('EXPAND', expiry);
+    next.expiresAt.set('EXPAND', stack('EXPAND'));
     next.paddleScale = PADDLE_SCALE_EXPAND;
     return {
       state: next,
@@ -139,7 +155,7 @@ export function applyPowerUp(
       next.expiresAt.delete('EXPAND');
     }
     next.active.add('SHRINK');
-    next.expiresAt.set('SHRINK', expiry);
+    next.expiresAt.set('SHRINK', stack('SHRINK'));
     next.paddleScale = PADDLE_SCALE_SHRINK;
     return {
       state: next,
@@ -152,7 +168,7 @@ export function applyPowerUp(
 
   if (type === 'STICKY') {
     next.active.add('STICKY');
-    next.expiresAt.set('STICKY', expiry);
+    next.expiresAt.set('STICKY', stack('STICKY'));
     next.sticky = true;
     return {
       state: next,
@@ -165,7 +181,7 @@ export function applyPowerUp(
 
   if (type === 'FIREBALL') {
     next.active.add('FIREBALL');
-    next.expiresAt.set('FIREBALL', expiry);
+    next.expiresAt.set('FIREBALL', stack('FIREBALL'));
     next.fireball = true;
     return {
       state: next,
@@ -178,7 +194,7 @@ export function applyPowerUp(
 
   if (type === 'LASER') {
     next.active.add('LASER');
-    next.expiresAt.set('LASER', expiry);
+    next.expiresAt.set('LASER', stack('LASER'));
     next.laser = true;
     return {
       state: next,
@@ -191,7 +207,7 @@ export function applyPowerUp(
 
   if (type === 'SLOW') {
     next.active.add('SLOW');
-    next.expiresAt.set('SLOW', expiry);
+    next.expiresAt.set('SLOW', stack('SLOW'));
     next.slow = true;
     return {
       state: next,
@@ -204,7 +220,7 @@ export function applyPowerUp(
 
   if (type === 'EXPLODE') {
     next.active.add('EXPLODE');
-    next.expiresAt.set('EXPLODE', expiry);
+    next.expiresAt.set('EXPLODE', stack('EXPLODE'));
     next.explode = true;
     return {
       state: next,

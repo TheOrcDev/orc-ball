@@ -132,8 +132,7 @@ export class PowerUpManager {
 
   collect(type: PowerUpType): void {
     const now = this.scene.time.now;
-    const duration = this.durationFor(type);
-    const result = applyPowerUp(this.state, type, now, duration);
+    const result = applyPowerUp(this.state, type, now, this.durationFor(type));
     this.state = result.state;
 
     if (type === 'SHRINK') this.hooks.onMalus?.();
@@ -159,7 +158,7 @@ export class PowerUpManager {
         this.paddle.clearTint();
         this.paddle.setTint(COLORS.expand);
       }
-      this.scheduleTimed('EXPAND', duration);
+      this.scheduleFromExpiry('EXPAND', now);
       this.emitEffects();
     } else if (type === 'SHRINK') {
       this.clearTimer('EXPAND');
@@ -167,34 +166,41 @@ export class PowerUpManager {
       if (!this.state.sticky) {
         this.paddle.setTint(COLORS.shrink);
       }
-      this.scheduleTimed('SHRINK', duration);
+      this.scheduleFromExpiry('SHRINK', now);
       this.emitEffects();
     } else if (type === 'STICKY') {
       this.paddle.setGlueLook(true);
-      this.scheduleTimed('STICKY', duration);
+      this.scheduleFromExpiry('STICKY', now);
       this.emitEffects();
     } else if (type === 'FIREBALL') {
       this.applyFireballToAll(true);
-      this.scheduleTimed('FIREBALL', duration);
+      this.scheduleFromExpiry('FIREBALL', now);
       this.emitEffects();
     } else if (type === 'LASER') {
       this.paddle.setLaserLook(true);
-      this.scheduleTimed('LASER', duration);
+      this.scheduleFromExpiry('LASER', now);
       this.emitEffects();
     } else if (type === 'SLOW') {
-      this.scheduleTimed('SLOW', duration);
+      this.scheduleFromExpiry('SLOW', now);
       this.hooks.onSlowChanged?.(true);
       this.emitEffects();
     } else if (type === 'EXPLODE') {
       this.applyExplodeToAll(true);
-      this.scheduleTimed('EXPLODE', duration);
+      this.scheduleFromExpiry('EXPLODE', now);
       this.emitEffects();
     }
   }
 
-  private scheduleTimed(effect: TimedEffect, durationMs: number): void {
+  /**
+   * Schedule expiry from stacked expiresAt (remaining + new pickup duration).
+   * Always resyncs the Phaser timer to the absolute expiry timestamp.
+   */
+  private scheduleFromExpiry(effect: TimedEffect, nowMs: number): void {
     this.clearTimer(effect);
-    const timer = this.scene.time.delayedCall(durationMs, () => {
+    const exp = this.state.expiresAt.get(effect);
+    if (exp === undefined) return;
+    const delay = Math.max(0, exp - nowMs);
+    const timer = this.scene.time.delayedCall(delay, () => {
       this.expire(effect);
     });
     this.timers.set(effect, timer);

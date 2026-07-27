@@ -38,15 +38,25 @@ describe('applyPowerUp', () => {
     expect(s.paddleScale).toBe(PADDLE_SCALE_EXPAND);
   });
 
-  it('re-collect refreshes timer without double-applying scale', () => {
+  it('re-collect stacks duration onto remaining time', () => {
     let s = createPowerUpState(3);
     s = applyPowerUp(s, 'STICKY', 0).state;
-    const firstExp = s.expiresAt.get('STICKY');
+    const firstExp = s.expiresAt.get('STICKY')!;
+    // 5s later, still ~5s left — second pickup adds a full duration
     const r = applyPowerUp(s, 'STICKY', 5000);
     expect(r.refreshed).toBe(true);
-    expect(r.state.expiresAt.get('STICKY')).toBe(5000 + POWERUP_DURATION_MS);
-    expect(r.state.expiresAt.get('STICKY')).not.toBe(firstExp);
+    expect(r.state.expiresAt.get('STICKY')).toBe(firstExp + POWERUP_DURATION_MS);
+    expect(r.state.expiresAt.get('STICKY')).toBe(5000 + (firstExp - 5000) + POWERUP_DURATION_MS);
     expect(r.state.sticky).toBe(true);
+  });
+
+  it('stacks two full laser pickups (12s + 12s)', () => {
+    let s = createPowerUpState(3);
+    s = applyPowerUp(s, 'LASER', 0, 12_000).state;
+    expect(s.expiresAt.get('LASER')).toBe(12_000);
+    // Immediate second pickup stacks another full 12s
+    s = applyPowerUp(s, 'LASER', 0, 12_000).state;
+    expect(s.expiresAt.get('LASER')).toBe(24_000);
   });
 
   it('EXTRA_LIFE caps at MAX_LIVES', () => {
@@ -74,14 +84,15 @@ describe('applyPowerUp', () => {
     expect(r.state.active.has('FIREBALL')).toBe(true);
   });
 
-  it('LASER sets laser flag (timed, refreshable)', () => {
+  it('LASER sets laser flag and stacks on re-collect', () => {
     let s = createPowerUpState(3);
     const first = applyPowerUp(s, 'LASER', 0, 10000);
     expect(first.state.laser).toBe(true);
     expect(first.state.active.has('LASER')).toBe(true);
+    // At t=5000, 5s remain → stack to 15s remaining → expires at 20000
     const second = applyPowerUp(first.state, 'LASER', 5000, 10000);
     expect(second.refreshed).toBe(true);
-    expect(second.state.expiresAt.get('LASER')).toBe(15000);
+    expect(second.state.expiresAt.get('LASER')).toBe(20000);
   });
 
   it('SLOW sets slow flag', () => {
