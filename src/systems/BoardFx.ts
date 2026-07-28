@@ -1,10 +1,32 @@
 import Phaser from 'phaser';
 import { HEIGHT, WIDTH } from '../config';
+import { shouldReconfigureParticleStyle } from '../logic/fxCadence';
 import {
   getFxTheme,
+  getThemeById,
   type ActiveFxFlags,
+  type FxStyle,
   type FxTheme,
+  type FxThemeId,
 } from '../logic/fxTheme';
+
+const STATIC_THEME_IDS: readonly FxThemeId[] = [
+  'default',
+  'glue',
+  'bullet',
+  'expand',
+  'shrink',
+  'multi',
+  'laser',
+  'slow',
+  'explode',
+];
+
+interface StaticFxLayers {
+  bg: Phaser.GameObjects.Graphics;
+  floor: Phaser.GameObjects.Graphics;
+  walls: Phaser.GameObjects.Graphics;
+}
 
 /**
  * 3D-ish arena frame + power-reactive FX.
@@ -18,12 +40,15 @@ export class BoardFx {
   private goo!: Phaser.GameObjects.Graphics;
   private ambient?: Phaser.GameObjects.Particles.ParticleEmitter;
   private edgeSparks?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private readonly staticLayers = new Map<FxThemeId, StaticFxLayers>();
   private theme: FxTheme = getFxTheme({
     sticky: false,
     fireball: false,
     expand: false,
     shrink: false,
   });
+  /** Particle processors only need rebuilding when electric/glue style changes. */
+  private particleStyle: FxStyle = 'electric';
   private boltTimer = 0;
   private pulse = 0;
   private multiPulseUntil = 0;
@@ -39,9 +64,25 @@ export class BoardFx {
   };
 
   constructor(scene: Phaser.Scene) {
-    this.bg = scene.add.graphics().setDepth(-20);
-    this.floor = scene.add.graphics().setDepth(-15);
-    this.walls = scene.add.graphics().setDepth(-10);
+    const initialLayers = this.createStaticLayers(scene);
+    this.bg = initialLayers.bg;
+    this.floor = initialLayers.floor;
+    this.walls = initialLayers.walls;
+
+    // Static board themes are prepared during scene setup. Picking up a power
+    // now toggles cached layers instead of clearing and rebuilding three large
+    // Graphics command lists in the physics frame.
+    for (const id of STATIC_THEME_IDS) {
+      const layers =
+        id === this.theme.id ? initialLayers : this.createStaticLayers(scene);
+      this.redrawStatic(getThemeById(id), layers);
+      const visible = id === this.theme.id;
+      layers.bg.setVisible(visible);
+      layers.floor.setVisible(visible);
+      layers.walls.setVisible(visible);
+      this.staticLayers.set(id, layers);
+    }
+
     this.goo = scene.add.graphics().setDepth(-7);
     this.bolts = scene.add.graphics().setDepth(-5);
 
@@ -72,7 +113,6 @@ export class BoardFx {
     this.edgeSparks.setDepth(5);
 
     this.applyTheme(this.theme);
-    this.redrawStatic();
     this.redrawDynamic();
   }
 
@@ -97,10 +137,8 @@ export class BoardFx {
     const next = getFxTheme(effective);
     if (next.id !== this.theme.id) {
       this.applyTheme(next);
-      this.redrawStatic();
+      this.showStaticTheme(next.id);
       this.redrawDynamic();
-    } else {
-      this.theme = next;
     }
   }
 
@@ -110,13 +148,14 @@ export class BoardFx {
   }
 
   private applyTheme(theme: FxTheme): void {
+    const styleChanged = shouldReconfigureParticleStyle(
+      this.particleStyle,
+      theme.style,
+    );
     this.theme = theme;
     if (!this.ambient) return;
 
-    this.ambient.setParticleTint(theme.sparkTint);
-    this.ambient.frequency = theme.particleFrequency;
-
-    if (theme.style === 'glue') {
+    if (styleChanged && theme.style === 'glue') {
       // Slow falling goo droplets
       this.ambient.setConfig({
         x: { min: 16, max: WIDTH - 16 },
@@ -139,7 +178,7 @@ export class BoardFx {
         alpha: { start: 0.85, end: 0 },
         blendMode: 'NORMAL',
       });
-    } else {
+    } else if (styleChanged) {
       this.ambient.setConfig({
         x: { min: 20, max: WIDTH - 20 },
         y: { min: 40, max: HEIGHT - 80 },
@@ -164,9 +203,12 @@ export class BoardFx {
       });
     }
 
-    if (this.edgeSparks) {
-      this.edgeSparks.setParticleTint(theme.sparkTint);
-    }
+    // Palette/frequency vary by theme, but do not require rebuilding all
+    // particle emitter processors while staying within the same style.
+    this.ambient.frequency = theme.particleFrequency;
+    this.ambient.setParticleTint(theme.sparkTint);
+    this.edgeSparks?.setParticleTint(theme.sparkTint);
+    this.particleStyle = theme.style;
   }
 
   update(time: number, delta: number): void {
@@ -247,9 +289,32 @@ export class BoardFx {
     this.edgeSparks.explode(4 + Math.floor(Math.random() * 5), x, y);
   }
 
-  private redrawStatic(): void {
-    const t = this.theme;
-    this.bg.clear();
+  private createStaticLayers(scene: Phaser.Scene): StaticFxLayers {
+    return {
+      bg: scene.add.graphics().setDepth(-20),
+      floor: scene.add.graphics().setDepth(-15),
+      walls: scene.add.graphics().setDepth(-10),
+    };
+  }
+
+  private showStaticTheme(id: FxThemeId): void {
+    const layers = this.staticLayers.get(id);
+    if (!layers) return;
+
+    this.bg.setVisible(false);
+    this.floor.setVisible(false);
+    this.walls.setVisible(false);
+    this.bg = layers.bg;
+    this.floor = layers.floor;
+    this.walls = layers.walls;
+    this.bg.setVisible(true);
+    this.floor.setVisible(true);
+    this.walls.setVisible(true);
+  }
+
+  private redrawStatic(t: FxTheme, layers: StaticFxLayers): void {
+    const { bg, floor, walls } = layers;
+    bg.clear();
     const steps = 24;
     for (let i = 0; i < steps; i++) {
       const c = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -259,127 +324,135 @@ export class BoardFx {
         i,
       );
       const color = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
-      this.bg.fillStyle(color, 1);
-      this.bg.fillRect(0, (HEIGHT / steps) * i, WIDTH, HEIGHT / steps + 1);
+      bg.fillStyle(color, 1);
+      bg.fillRect(0, (HEIGHT / steps) * i, WIDTH, HEIGHT / steps + 1);
     }
-    this.bg.fillStyle(0x000000, 0.35);
-    this.bg.fillRect(0, 0, WIDTH, 18);
-    this.bg.fillRect(0, HEIGHT - 30, WIDTH, 30);
+    bg.fillStyle(0x000000, 0.35);
+    bg.fillRect(0, 0, WIDTH, 18);
+    bg.fillRect(0, HEIGHT - 30, WIDTH, 30);
 
     // Glue haze overlay on the playfield
     if (t.style === 'glue') {
-      this.bg.fillStyle(t.primary, 0.06);
-      this.bg.fillRect(12, 24, WIDTH - 24, HEIGHT - 50);
+      bg.fillStyle(t.primary, 0.06);
+      bg.fillRect(12, 24, WIDTH - 24, HEIGHT - 50);
       // Sticky splotches on the field
       for (let i = 0; i < 14; i++) {
         const sx = 40 + Math.random() * (WIDTH - 80);
         const sy = 60 + Math.random() * (HEIGHT - 160);
         const r = 8 + Math.random() * 22;
-        this.bg.fillStyle(t.glow, 0.12 + Math.random() * 0.1);
-        this.bg.fillCircle(sx, sy, r);
-        this.bg.fillStyle(t.primary, 0.05);
-        this.bg.fillCircle(sx - r * 0.2, sy - r * 0.2, r * 0.55);
+        bg.fillStyle(t.glow, 0.12 + Math.random() * 0.1);
+        bg.fillCircle(sx, sy, r);
+        bg.fillStyle(t.primary, 0.05);
+        bg.fillCircle(sx - r * 0.2, sy - r * 0.2, r * 0.55);
       }
     }
 
-    this.floor.clear();
+    floor.clear();
     if (t.style === 'glue') {
       // Thick goo puddle on the floor
-      this.floor.fillStyle(t.glow, 0.35);
-      this.floor.fillEllipse(WIDTH / 2, HEIGHT - 8, WIDTH * 0.92, 36);
-      this.floor.fillStyle(t.primary, 0.22);
-      this.floor.fillEllipse(WIDTH / 2, HEIGHT - 14, WIDTH * 0.7, 22);
-      this.floor.fillStyle(t.secondary, 0.15);
-      this.floor.fillEllipse(WIDTH / 2 - 40, HEIGHT - 18, 120, 14);
+      floor.fillStyle(t.glow, 0.35);
+      floor.fillEllipse(WIDTH / 2, HEIGHT - 8, WIDTH * 0.92, 36);
+      floor.fillStyle(t.primary, 0.22);
+      floor.fillEllipse(WIDTH / 2, HEIGHT - 14, WIDTH * 0.7, 22);
+      floor.fillStyle(t.secondary, 0.15);
+      floor.fillEllipse(WIDTH / 2 - 40, HEIGHT - 18, 120, 14);
       // Surface shine
-      this.floor.fillStyle(0xffffff, 0.08);
-      this.floor.fillEllipse(WIDTH / 2 - 60, HEIGHT - 20, 80, 6);
+      floor.fillStyle(0xffffff, 0.08);
+      floor.fillEllipse(WIDTH / 2 - 60, HEIGHT - 20, 80, 6);
     } else {
-      this.floor.fillStyle(t.glow, 0.12);
-      this.floor.fillTriangle(0, HEIGHT, WIDTH, HEIGHT, WIDTH / 2, HEIGHT - 70);
-      this.floor.lineStyle(2, t.primary, 0.2);
-      this.floor.lineBetween(40, HEIGHT - 8, WIDTH - 40, HEIGHT - 8);
+      floor.fillStyle(t.glow, 0.12);
+      floor.fillTriangle(0, HEIGHT, WIDTH, HEIGHT, WIDTH / 2, HEIGHT - 70);
+      floor.lineStyle(2, t.primary, 0.2);
+      floor.lineBetween(40, HEIGHT - 8, WIDTH - 40, HEIGHT - 8);
       for (let i = 0; i < 5; i++) {
         const y = HEIGHT - 12 - i * 10;
         const inset = i * 28;
-        this.floor.lineStyle(1, t.primary, 0.08 + i * 0.02);
-        this.floor.lineBetween(inset, y, WIDTH - inset, y);
+        floor.lineStyle(1, t.primary, 0.08 + i * 0.02);
+        floor.lineBetween(inset, y, WIDTH - inset, y);
       }
     }
 
-    this.walls.clear();
+    walls.clear();
     const rail = t.style === 'glue' ? 14 : 10;
 
     if (t.style === 'glue') {
-      this.drawGlueRails(t, rail);
+      this.drawGlueRails(walls, t, rail);
     } else {
-      this.drawElectricRails(t, rail);
+      this.drawElectricRails(walls, t, rail);
     }
   }
 
-  private drawElectricRails(t: FxTheme, rail: number): void {
-    this.walls.fillStyle(t.glow, 0.85);
-    this.walls.fillRect(0, 20, rail, HEIGHT - 50);
-    this.walls.fillStyle(t.primary, 0.55);
-    this.walls.fillRect(0, 20, 3, HEIGHT - 50);
-    this.walls.fillStyle(0x000000, 0.35);
-    this.walls.fillRect(rail - 2, 20, 2, HEIGHT - 50);
+  private drawElectricRails(
+    walls: Phaser.GameObjects.Graphics,
+    t: FxTheme,
+    rail: number,
+  ): void {
+    walls.fillStyle(t.glow, 0.85);
+    walls.fillRect(0, 20, rail, HEIGHT - 50);
+    walls.fillStyle(t.primary, 0.55);
+    walls.fillRect(0, 20, 3, HEIGHT - 50);
+    walls.fillStyle(0x000000, 0.35);
+    walls.fillRect(rail - 2, 20, 2, HEIGHT - 50);
 
-    this.walls.fillStyle(t.glow, 0.85);
-    this.walls.fillRect(WIDTH - rail, 20, rail, HEIGHT - 50);
-    this.walls.fillStyle(t.primary, 0.55);
-    this.walls.fillRect(WIDTH - 3, 20, 3, HEIGHT - 50);
-    this.walls.fillStyle(0x000000, 0.35);
-    this.walls.fillRect(WIDTH - rail, 20, 2, HEIGHT - 50);
+    walls.fillStyle(t.glow, 0.85);
+    walls.fillRect(WIDTH - rail, 20, rail, HEIGHT - 50);
+    walls.fillStyle(t.primary, 0.55);
+    walls.fillRect(WIDTH - 3, 20, 3, HEIGHT - 50);
+    walls.fillStyle(0x000000, 0.35);
+    walls.fillRect(WIDTH - rail, 20, 2, HEIGHT - 50);
 
-    this.walls.fillStyle(t.glow, 0.9);
-    this.walls.fillRect(0, 0, WIDTH, 22);
-    this.walls.fillStyle(t.primary, 0.5);
-    this.walls.fillRect(0, 0, WIDTH, 4);
-    this.walls.fillStyle(0xffffff, 0.15);
-    this.walls.fillRect(0, 4, WIDTH, 2);
-    this.walls.fillStyle(0x000000, 0.4);
-    this.walls.fillRect(0, 20, WIDTH, 3);
-    this.walls.fillStyle(0x000000, 0.25);
-    this.walls.fillRect(rail, 22, WIDTH - rail * 2, 6);
+    walls.fillStyle(t.glow, 0.9);
+    walls.fillRect(0, 0, WIDTH, 22);
+    walls.fillStyle(t.primary, 0.5);
+    walls.fillRect(0, 0, WIDTH, 4);
+    walls.fillStyle(0xffffff, 0.15);
+    walls.fillRect(0, 4, WIDTH, 2);
+    walls.fillStyle(0x000000, 0.4);
+    walls.fillRect(0, 20, WIDTH, 3);
+    walls.fillStyle(0x000000, 0.25);
+    walls.fillRect(rail, 22, WIDTH - rail * 2, 6);
   }
 
-  private drawGlueRails(t: FxTheme, rail: number): void {
+  private drawGlueRails(
+    walls: Phaser.GameObjects.Graphics,
+    t: FxTheme,
+    rail: number,
+  ): void {
     // Thick slime coating on side rails
-    this.walls.fillStyle(t.glow, 0.95);
-    this.walls.fillRect(0, 18, rail, HEIGHT - 40);
-    this.walls.fillStyle(t.primary, 0.55);
-    this.walls.fillRect(2, 20, rail - 3, HEIGHT - 48);
-    this.walls.fillStyle(t.secondary, 0.35);
-    this.walls.fillRect(1, 22, 4, HEIGHT - 52);
+    walls.fillStyle(t.glow, 0.95);
+    walls.fillRect(0, 18, rail, HEIGHT - 40);
+    walls.fillStyle(t.primary, 0.55);
+    walls.fillRect(2, 20, rail - 3, HEIGHT - 48);
+    walls.fillStyle(t.secondary, 0.35);
+    walls.fillRect(1, 22, 4, HEIGHT - 52);
 
-    this.walls.fillStyle(t.glow, 0.95);
-    this.walls.fillRect(WIDTH - rail, 18, rail, HEIGHT - 40);
-    this.walls.fillStyle(t.primary, 0.55);
-    this.walls.fillRect(WIDTH - rail + 1, 20, rail - 3, HEIGHT - 48);
-    this.walls.fillStyle(t.secondary, 0.35);
-    this.walls.fillRect(WIDTH - 5, 22, 4, HEIGHT - 52);
+    walls.fillStyle(t.glow, 0.95);
+    walls.fillRect(WIDTH - rail, 18, rail, HEIGHT - 40);
+    walls.fillStyle(t.primary, 0.55);
+    walls.fillRect(WIDTH - rail + 1, 20, rail - 3, HEIGHT - 48);
+    walls.fillStyle(t.secondary, 0.35);
+    walls.fillRect(WIDTH - 5, 22, 4, HEIGHT - 52);
 
     // Gooey top bar (melted edge)
-    this.walls.fillStyle(t.glow, 0.95);
-    this.walls.fillRect(0, 0, WIDTH, 26);
-    this.walls.fillStyle(t.primary, 0.5);
-    this.walls.fillRect(0, 0, WIDTH, 10);
-    this.walls.fillStyle(0xffffff, 0.12);
-    this.walls.fillRect(0, 4, WIDTH, 3);
+    walls.fillStyle(t.glow, 0.95);
+    walls.fillRect(0, 0, WIDTH, 26);
+    walls.fillStyle(t.primary, 0.5);
+    walls.fillRect(0, 0, WIDTH, 10);
+    walls.fillStyle(0xffffff, 0.12);
+    walls.fillRect(0, 4, WIDTH, 3);
 
     // Dripping scallops along top lip
     for (let x = 12; x < WIDTH; x += 28) {
       const len = 10 + (x % 40) * 0.2;
-      this.walls.fillStyle(t.primary, 0.65);
-      this.walls.fillCircle(x, 24 + len * 0.3, 5 + (x % 7) * 0.3);
-      this.walls.fillStyle(t.secondary, 0.4);
-      this.walls.fillTriangle(x - 6, 22, x + 6, 22, x, 28 + len);
+      walls.fillStyle(t.primary, 0.65);
+      walls.fillCircle(x, 24 + len * 0.3, 5 + (x % 7) * 0.3);
+      walls.fillStyle(t.secondary, 0.4);
+      walls.fillTriangle(x - 6, 22, x + 6, 22, x, 28 + len);
     }
 
     // Inner sticky lip
-    this.walls.fillStyle(t.glow, 0.35);
-    this.walls.fillRect(rail, 26, WIDTH - rail * 2, 8);
+    walls.fillStyle(t.glow, 0.35);
+    walls.fillRect(rail, 26, WIDTH - rail * 2, 8);
   }
 
   private redrawDynamic(): void {
@@ -582,10 +655,13 @@ export class BoardFx {
   }
 
   destroy(): void {
-    this.bg.destroy();
-    this.walls.destroy();
+    for (const layers of this.staticLayers.values()) {
+      layers.bg.destroy();
+      layers.floor.destroy();
+      layers.walls.destroy();
+    }
+    this.staticLayers.clear();
     this.bolts.destroy();
-    this.floor.destroy();
     this.goo.destroy();
     this.ambient?.destroy();
     this.edgeSparks?.destroy();

@@ -1,14 +1,19 @@
 import Phaser from 'phaser';
 import {
-  COLORS,
   PADDLE_HEIGHT,
   PADDLE_SCALE_NORMAL,
   PADDLE_SPEED,
   PADDLE_Y,
   WIDTH,
 } from '../config';
+import {
+  advanceFxRedrawClock,
+  isFxRedrawDue,
+} from '../logic/fxCadence';
 import { paddleBodySetSizeArgs } from '../logic/paddleBody';
 import { clampPaddleX } from '../logic/touch';
+
+const OVERLAY_REDRAW_INTERVAL_MS = 50;
 
 export class Paddle extends Phaser.Physics.Arcade.Sprite {
   sticky = false;
@@ -22,14 +27,12 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   private pointerTargetX: number | null = null;
   /** Smoothed horizontal velocity for ball english when pointer-steering. */
   private pointerVelX = 0;
-  /** Animated goo overlay while GLUE is active. */
-  private glueOverlay?: Phaser.GameObjects.Graphics;
-  private glueDripPhase = 0;
   private glueLook = false;
   /** Twin laser cannons while LASER power is active. */
   private laserOverlay?: Phaser.GameObjects.Graphics;
   private laserLook = false;
   private laserPulse = 0;
+  private laserRedrawElapsedMs = 0;
   private widthScale = PADDLE_SCALE_NORMAL;
 
   constructor(scene: Phaser.Scene, x?: number, y?: number) {
@@ -51,6 +54,12 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
       this.keyD = kb.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     }
+
+    // Allocate the laser layer during setup, outside pickup/physics callbacks.
+    this.laserOverlay = scene.add
+      .graphics()
+      .setDepth(this.depth + 2)
+      .setVisible(false);
   }
 
   /**
@@ -74,9 +83,21 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   }
 
   setWidthScale(scale: number): void {
+    if (
+      this.widthScale === scale &&
+      this.scaleX === scale &&
+      this.scaleY === scale
+    ) {
+      return;
+    }
     this.widthScale = scale;
     this.setScale(scale);
     this.syncBodySize();
+    if (this.laserLook) {
+      this.syncOverlayState(this.laserOverlay, 2);
+      this.redrawLaserOverlay();
+      this.laserRedrawElapsedMs = 0;
+    }
   }
 
   resetWidth(): void {
@@ -84,10 +105,12 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
-   * GLUE power: swap to slime paddle texture + live drip overlay.
+   * GLUE power: swap to a pre-baked slime paddle texture.
    * This is the player object looking "glued", not the arena.
    */
   setGlueLook(active: boolean): void {
+    if (this.glueLook === active && this.sticky === active) return;
+
     this.glueLook = active;
     this.sticky = active;
     if (active) {
@@ -98,36 +121,31 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
       this.setOrigin(0.5, PADDLE_HEIGHT / 2 / (PADDLE_HEIGHT + 18));
       this.setScale(this.widthScale);
       this.syncBodySize();
-      this.ensureGlueOverlay();
+      // The texture carries the full slime/drip treatment without per-frame
+      // vector tessellation.
     } else {
       this.setTexture('paddle');
       this.setOrigin(0.5, 0.5);
       this.setScale(this.widthScale);
       this.syncBodySize();
-      this.destroyGlueOverlay();
     }
-  }
-
-  private ensureGlueOverlay(): void {
-    if (this.glueOverlay) return;
-    this.glueOverlay = this.scene.add.graphics().setDepth(this.depth + 1);
-  }
-
-  private destroyGlueOverlay(): void {
-    this.glueOverlay?.destroy();
-    this.glueOverlay = undefined;
   }
 
   /**
    * LASER power: draw twin gun turrets on the left/right ends of the paddle.
    */
   setLaserLook(active: boolean): void {
+    if (this.laserLook === active) return;
+
     this.laserLook = active;
     if (active) {
       this.ensureLaserOverlay();
+      this.laserOverlay?.setVisible(true);
+      this.syncOverlayState(this.laserOverlay, 2);
       this.redrawLaserOverlay();
+      this.laserRedrawElapsedMs = 0;
     } else {
-      this.destroyLaserOverlay();
+      this.laserOverlay?.setVisible(false);
     }
   }
 
@@ -136,8 +154,12 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   }
 
   private ensureLaserOverlay(): void {
-    if (this.laserOverlay) return;
-    this.laserOverlay = this.scene.add.graphics().setDepth(this.depth + 2);
+    if (!this.laserOverlay) {
+      this.laserOverlay = this.scene.add
+        .graphics()
+        .setDepth(this.depth + 2)
+        .setVisible(false);
+    }
   }
 
   private destroyLaserOverlay(): void {
@@ -151,11 +173,11 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
     g.clear();
 
     const halfW = this.displayWidth / 2;
-    const top = this.faceTop;
+    const top = -this.faceHeight / 2;
     const faceH = this.faceHeight;
     const inset = 8 * this.scaleX;
-    const leftX = this.x - halfW + inset;
-    const rightX = this.x + halfW - inset;
+    const leftX = -halfW + inset;
+    const rightX = halfW - inset;
     const glow = 0.55 + Math.sin(this.laserPulse * 4) * 0.2;
 
     this.drawLaserCannon(g, leftX, top, faceH, glow);
@@ -186,54 +208,25 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
     g.fillCircle(x, faceTop - 14 * s, 2 * s);
   }
 
-  private redrawGlueOverlay(): void {
-    const g = this.glueOverlay;
-    if (!g || !this.glueLook) return;
-    g.clear();
-
-    const halfW = this.displayWidth / 2;
-    const top = this.y - this.displayHeight * this.originY;
-    const faceBottom = top + PADDLE_HEIGHT * this.scaleY;
-    const left = this.x - halfW;
-
-    // Animated drips hanging under the paddle face
-    const count = 7;
-    for (let i = 0; i < count; i++) {
-      const t = i / (count - 1);
-      const x = left + 10 * this.scaleX + t * (this.displayWidth - 20 * this.scaleX);
-      const wobble = Math.sin(this.glueDripPhase * 2.2 + i * 1.1) * 3;
-      const len = (10 + (i % 3) * 5 + wobble) * this.scaleY;
-      // Strand
-      g.fillStyle(0xc6ff00, 0.75);
-      g.fillTriangle(x - 3.5 * this.scaleX, faceBottom - 1, x + 3.5 * this.scaleX, faceBottom - 1, x, faceBottom + len);
-      // Droplet
-      g.fillStyle(0xeeff41, 0.9);
-      g.fillCircle(x, faceBottom + len, 3.2 * this.scaleX);
-      g.fillStyle(0xffffff, 0.25);
-      g.fillCircle(x - 1, faceBottom + len * 0.55, 1.2 * this.scaleX);
+  /**
+   * Overlay geometry is paddle-local. Moving the Graphics object is cheap and
+   * keeps it attached every frame without clearing/rebuilding its command list.
+   */
+  private syncOverlayState(
+    overlay: Phaser.GameObjects.Graphics | undefined,
+    depthOffset: number,
+  ): void {
+    if (!overlay) return;
+    if (overlay.x !== this.x || overlay.y !== this.y) {
+      overlay.setPosition(this.x, this.y);
     }
-
-    // Surface goo blobs on top of paddle
-    g.fillStyle(0xaeea00, 0.45);
-    for (let i = 0; i < 4; i++) {
-      const bx =
-        left +
-        16 * this.scaleX +
-        i * ((this.displayWidth - 32 * this.scaleX) / 3) +
-        Math.sin(this.glueDripPhase + i) * 2;
-      const by = top + 4 * this.scaleY + Math.cos(this.glueDripPhase * 1.5 + i) * 1.5;
-      g.fillCircle(bx, by, (3.5 + (i % 2)) * this.scaleX);
+    if (overlay.alpha !== this.alpha) {
+      overlay.setAlpha(this.alpha);
     }
-
-    // Soft outer glow (sticky aura)
-    g.lineStyle(3, COLORS.sticky, 0.35);
-    g.strokeRoundedRect(
-      left - 2,
-      top - 2,
-      this.displayWidth + 4,
-      PADDLE_HEIGHT * this.scaleY + 4,
-      8,
-    );
+    const targetDepth = this.depth + depthOffset;
+    if (overlay.depth !== targetDepth) {
+      overlay.setDepth(targetDepth);
+    }
   }
 
   /** Follow finger/cursor X, or null to return to keyboard control. */
@@ -286,15 +279,23 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
     this.y = this.lockedY;
     body.setVelocityY(0);
 
-    if (this.glueLook) {
-      this.glueDripPhase += dt * 3;
-      this.redrawGlueOverlay();
-      this.glueOverlay?.setAlpha(this.alpha);
-    }
     if (this.laserLook) {
       this.laserPulse += dt;
-      this.redrawLaserOverlay();
-      this.laserOverlay?.setAlpha(this.alpha);
+      this.syncOverlayState(this.laserOverlay, 2);
+      this.laserRedrawElapsedMs = advanceFxRedrawClock(
+        this.laserRedrawElapsedMs,
+        delta,
+        OVERLAY_REDRAW_INTERVAL_MS,
+      );
+      if (
+        isFxRedrawDue(
+          this.laserRedrawElapsedMs,
+          OVERLAY_REDRAW_INTERVAL_MS,
+        )
+      ) {
+        this.redrawLaserOverlay();
+        this.laserRedrawElapsedMs = 0;
+      }
     }
   }
 
@@ -321,7 +322,6 @@ export class Paddle extends Phaser.Physics.Arcade.Sprite {
   }
 
   destroy(fromScene?: boolean): void {
-    this.destroyGlueOverlay();
     this.destroyLaserOverlay();
     super.destroy(fromScene);
   }

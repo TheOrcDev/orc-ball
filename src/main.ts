@@ -34,5 +34,16 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, GameScene, UIScene],
 };
 
-// eslint-disable-next-line no-new
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Opt-in development bridge for the deterministic pickup profiler.
+if (
+  import.meta.env.DEV &&
+  new URLSearchParams(window.location.search).has('profile')
+) {
+  (
+    window as Window & {
+      __ORC_BALL_GAME__?: Phaser.Game;
+    }
+  ).__ORC_BALL_GAME__ = game;
+}

@@ -27,6 +27,10 @@ import {
 import { getLevel, levelCount, LEVELS } from '../data/levels';
 import type { PowerUpType } from '../data/types';
 import { rollPowerUpDrop } from '../logic/drops';
+import {
+  createEmptyEffectSnapshot,
+  type EffectSnapshot,
+} from '../logic/effectHudRenderState';
 import { resolvePair } from '../logic/collidePair';
 import { isOrthogonalNeighbor } from '../logic/explode';
 import {
@@ -66,7 +70,6 @@ import {
   saveGameOver,
   saveLevelCleared,
   saveRun,
-  updateHighScore,
 } from '../systems/ProgressSave';
 import { PowerUpManager } from '../systems/PowerUpManager';
 import { Sfx } from '../systems/Sfx';
@@ -76,17 +79,26 @@ interface GameSceneData {
   level?: number;
 }
 
+type PendingPowerUpCollection = {
+  type: PowerUpType;
+  x: number;
+  y: number;
+};
+
 export class GameScene extends Phaser.Scene {
   private paddle!: Paddle;
   private balls!: Phaser.Physics.Arcade.Group;
   private bricks!: Phaser.Physics.Arcade.StaticGroup;
   private powerUps!: Phaser.Physics.Arcade.Group;
+  /** One pre-rasterized pickup toast per label; reused on collection. */
+  private powerUpToasts = new Map<PowerUpType, Phaser.GameObjects.Text>();
   private lasers!: Phaser.Physics.Arcade.Group;
   private powerUpManager!: PowerUpManager;
   private sfx!: Sfx;
   private lastLaserShotAt = 0;
   private breakEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private fireTrailEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private fireTrailTarget?: Ball;
   private spaceKey?: Phaser.Input.Keyboard.Key;
   private pauseKey?: Phaser.Input.Keyboard.Key;
   private escKey?: Phaser.Input.Keyboard.Key;
@@ -138,11 +150,14 @@ export class GameScene extends Phaser.Scene {
    */
   private pendingDestroy: Phaser.GameObjects.GameObject[] = [];
   private pendingDrops: { x: number; y: number }[] = [];
+  private pendingCollections: PendingPowerUpCollection[] = [];
   /** Level clear must not run inside a collision callback. */
   private levelClearPending = false;
   /** Cap break FX per frame — fireball/blast wipes can stall the main thread. */
   private breakFxThisFrame = 0;
   private static readonly MAX_BREAK_FX_PER_FRAME = 5;
+  private static readonly MAX_DROP_SPAWNS_PER_FRAME = 6;
+  private static readonly MAX_DESTROYS_PER_FRAME = 24;
   private readonly onWorldBounds = (body: Phaser.Physics.Arcade.Body): void => {
     const go = body.gameObject;
     if (go instanceof Ball && !go.stuckToPaddle) {
@@ -168,6 +183,9 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay = undefined;
     this.pendingDestroy = [];
     this.pendingDrops = [];
+    this.pendingCollections = [];
+    this.powerUpToasts = new Map();
+    this.fireTrailTarget = undefined;
   }
 
   create(): void {
@@ -225,17 +243,9 @@ export class GameScene extends Phaser.Scene {
       classType: PowerUp,
       runChildUpdate: false,
     });
+    this.createPowerUpToasts();
 
-    this.registry.set('effectGlue', false);
-    this.registry.set('effectBullet', false);
-    this.registry.set('effectLaser', false);
-    this.registry.set('effectSlow', false);
-    this.registry.set('effectExplode', false);
-    this.registry.set('effectGlueExpires', 0);
-    this.registry.set('effectBulletExpires', 0);
-    this.registry.set('effectLaserExpires', 0);
-    this.registry.set('effectSlowExpires', 0);
-    this.registry.set('effectExplodeExpires', 0);
+    this.registry.set('effectSnapshot', createEmptyEffectSnapshot());
 
     this.lasers = this.physics.add.group({
       classType: Laser,
@@ -256,16 +266,19 @@ export class GameScene extends Phaser.Scene {
         onMalus: () => this.sfx.powerDown(),
         onStickyExpired: () => this.launchStuckBalls(),
         onEffectsChanged: (effects, expiresAt) => {
-          this.registry.set('effectGlue', effects.sticky);
-          this.registry.set('effectBullet', effects.fireball);
-          this.registry.set('effectLaser', effects.laser);
-          this.registry.set('effectSlow', effects.slow);
-          this.registry.set('effectExplode', effects.explode);
-          this.registry.set('effectGlueExpires', expiresAt.sticky);
-          this.registry.set('effectBulletExpires', expiresAt.fireball);
-          this.registry.set('effectLaserExpires', expiresAt.laser);
-          this.registry.set('effectSlowExpires', expiresAt.slow);
-          this.registry.set('effectExplodeExpires', expiresAt.explode);
+          const effectSnapshot: EffectSnapshot = {
+            glue: effects.sticky,
+            bullet: effects.fireball,
+            laser: effects.laser,
+            slow: effects.slow,
+            explode: effects.explode,
+            glueExpires: expiresAt.sticky,
+            bulletExpires: expiresAt.fireball,
+            laserExpires: expiresAt.laser,
+            slowExpires: expiresAt.slow,
+            explodeExpires: expiresAt.explode,
+          };
+          this.registry.set('effectSnapshot', effectSnapshot);
           this.boardFx.setEffects(effects, this.time.now);
         },
         onMultiballVisual: () => {
@@ -379,6 +392,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.pendingDestroy.length = 0;
     this.pendingDrops.length = 0;
+    this.pendingCollections.length = 0;
+    this.powerUpToasts.clear();
+    this.fireTrailTarget = undefined;
     try {
       Music.stop(this);
     } catch {
@@ -1096,16 +1112,7 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('level', 0);
     this.registry.set('highScore', loadProgress().highScore);
     this.registry.set('uiOverlay', 'none');
-    this.registry.set('effectGlue', false);
-    this.registry.set('effectBullet', false);
-    this.registry.set('effectLaser', false);
-    this.registry.set('effectSlow', false);
-    this.registry.set('effectExplode', false);
-    this.registry.set('effectGlueExpires', 0);
-    this.registry.set('effectBulletExpires', 0);
-    this.registry.set('effectLaserExpires', 0);
-    this.registry.set('effectSlowExpires', 0);
-    this.registry.set('effectExplodeExpires', 0);
+    this.registry.set('effectSnapshot', createEmptyEffectSnapshot());
     this.scene.restart({ level: 0 });
   }
 
@@ -1480,6 +1487,14 @@ export class GameScene extends Phaser.Scene {
     this.pendingDrops.push({ x, y });
   }
 
+  private queuePowerUpCollection(
+    type: PowerUpType,
+    x: number,
+    y: number,
+  ): void {
+    this.pendingCollections.push({ type, x, y });
+  }
+
   /**
    * Phaser order: PRE_UPDATE → UPDATE (physics!) → scene.update → POST_UPDATE.
    * Flush a limited number of destroys; never mass-destroy on level clear.
@@ -1497,6 +1512,18 @@ export class GameScene extends Phaser.Scene {
   };
 
   private flushDeferredWork = (): void => {
+    // Logical pickups are never discarded. Apply all of them in FIFO order
+    // after the physics step, even if this frame also ended the level.
+    const collections = this.pendingCollections.splice(0);
+    for (const collection of collections) {
+      this.powerUpManager.collect(collection.type);
+      this.showPowerUpToast(
+        collection.type,
+        collection.x,
+        collection.y,
+      );
+    }
+
     // Level already won — scene restart will dispose everything. Mass
     // destroy() of every brick here is a known hard freeze after fireball wipes.
     if (this.awaitingAdvance || this.levelClearPending) {
@@ -1504,16 +1531,27 @@ export class GameScene extends Phaser.Scene {
       this.pendingDestroy.length = 0;
       return;
     }
-    if (this.pendingDrops.length === 0 && this.pendingDestroy.length === 0) {
+    if (
+      this.pendingDrops.length === 0 &&
+      this.pendingDestroy.length === 0 &&
+      this.pendingCollections.length === 0
+    ) {
       return;
     }
-    const drops = this.pendingDrops.splice(0, this.pendingDrops.length);
+
+    // Avoid creating many bodies and text/texture resources in one frame.
+    const drops = this.pendingDrops.splice(
+      0,
+      GameScene.MAX_DROP_SPAWNS_PER_FRAME,
+    );
     for (const d of drops) {
       this.spawnPowerUpDrop(d.x, d.y);
     }
     // Cap destroys per frame to keep the main thread responsive
-    const budget = 24;
-    const kill = this.pendingDestroy.splice(0, budget);
+    const kill = this.pendingDestroy.splice(
+      0,
+      GameScene.MAX_DESTROYS_PER_FRAME,
+    );
     for (const go of kill) {
       if (go && (go as Phaser.GameObjects.GameObject).scene) {
         try {
@@ -1579,42 +1617,61 @@ export class GameScene extends Phaser.Scene {
             : null;
       if (!power || !power.active) return;
       const type = power.powerType as PowerUpType;
-      const label = POWERUP_LABEL[type];
+      const { x, y } = power;
       // Disable immediately so we don't re-collect this frame
       this.queueDestroy(power);
-      this.powerUpManager.collect(type);
-      this.showPowerUpToast(label, power.x, power.y);
+      this.queuePowerUpCollection(type, x, y);
     };
 
-  /** Floating label when a power-up is collected (GLUE / BULLET / …). */
-  private showPowerUpToast(label: string, x: number, y: number): void {
-    const color =
-      label === 'GLUE'
-        ? '#26a69a'
-        : label === 'BULLET'
-          ? '#ff7043'
-          : label === 'SLOW'
-            ? '#29b6f6'
-            : label === 'BLAST'
-              ? '#ffc107'
-              : '#ffffff';
-    const t = this.add
-      .text(x, y, label, {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        fontStyle: 'bold',
-        color,
-        stroke: '#000000',
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5);
+  private powerUpToastColor(label: string): string {
+    return label === 'GLUE'
+      ? '#26a69a'
+      : label === 'BULLET'
+        ? '#ff7043'
+        : label === 'SLOW'
+          ? '#29b6f6'
+          : label === 'BLAST'
+            ? '#ffc107'
+            : '#ffffff';
+  }
+
+  /** Rasterize every toast during scene setup, outside pickup frames. */
+  private createPowerUpToasts(): void {
+    for (const [type, label] of Object.entries(POWERUP_LABEL) as [
+      PowerUpType,
+      string,
+    ][]) {
+      const toast = this.add
+        .text(0, 0, label, {
+          fontFamily: 'monospace',
+          fontSize: '18px',
+          fontStyle: 'bold',
+          color: this.powerUpToastColor(label),
+          stroke: '#000000',
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5)
+        .setActive(false)
+        .setVisible(false);
+      this.powerUpToasts.set(type, toast);
+    }
+  }
+
+  /** Reuse a pre-rasterized floating pickup label. */
+  private showPowerUpToast(type: PowerUpType, x: number, y: number): void {
+    const t = this.powerUpToasts.get(type);
+    if (!t?.scene) return;
+    this.tweens.killTweensOf(t);
+    t.setPosition(x, y).setAlpha(1).setActive(true).setVisible(true);
     this.tweens.add({
       targets: t,
       y: y - 40,
       alpha: 0,
       duration: 900,
       ease: 'Cubic.easeOut',
-      onComplete: () => t.destroy(),
+      onComplete: () => {
+        t.setActive(false).setVisible(false);
+      },
     });
   }
 
@@ -1661,10 +1718,6 @@ export class GameScene extends Phaser.Scene {
   private addScore(n: number): void {
     const score = ((this.registry.get('score') as number) ?? 0) + n;
     this.registry.set('score', score);
-    // Lightweight high-score track (full run checkpoint on level clear / menu)
-    if (score % 100 === 0) {
-      updateHighScore(score);
-    }
   }
 
   /**
@@ -1678,6 +1731,7 @@ export class GameScene extends Phaser.Scene {
     this.awaitingAdvance = true;
     this.pendingDrops.length = 0;
     this.pendingDestroy.length = 0;
+    this.pendingCollections.length = 0;
 
     try {
       this.physics.world.pause();
@@ -1780,6 +1834,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onLifeLost(): void {
+    // Preserve any pickup earned during this physics step before resetting
+    // round-scoped timed effects. EXTRA_LIFE still counts; timed powers reset.
+    const collections = this.pendingCollections.splice(0);
+    for (const collection of collections) {
+      this.powerUpManager.collect(collection.type);
+      this.showPowerUpToast(
+        collection.type,
+        collection.x,
+        collection.y,
+      );
+    }
+    // A brick drop queued in the lost frame must not appear in the new round.
+    this.pendingDrops.length = 0;
     this.sfx.loseLife();
     this.cameras.main.shake(250, 0.01);
     this.powerUpManager.reset();
@@ -1901,20 +1968,25 @@ export class GameScene extends Phaser.Scene {
       const fireBall = balls.find(
         (b) => b.active && b.isFireball && !b.stuckToPaddle,
       );
-      if (fireBall) {
-        this.fireTrailEmitter.startFollow(fireBall);
-        this.fireTrailEmitter.start();
-      } else {
+      if (fireBall !== this.fireTrailTarget) {
+        this.fireTrailTarget = fireBall;
+        if (fireBall) {
+          this.fireTrailEmitter.startFollow(fireBall);
+          this.fireTrailEmitter.start();
+        } else {
+          this.fireTrailEmitter.stop();
+          this.fireTrailEmitter.stopFollow();
+        }
+      } else if (!fireBall && this.fireTrailEmitter.emitting) {
         this.fireTrailEmitter.stop();
         this.fireTrailEmitter.stopFollow();
       }
     }
 
-    // Sync drop letters + cull fallen power-ups
+    // The glyph is baked into each drop texture; only cull fallen power-ups.
     const powerUps = this.powerUps.getChildren() as PowerUp[];
     for (const pu of powerUps) {
       if (!pu.active) continue;
-      pu.syncLabel();
       if (pu.y > HEIGHT + 40) this.queueDestroy(pu);
     }
 

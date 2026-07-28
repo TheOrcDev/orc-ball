@@ -2,17 +2,20 @@ import Phaser from 'phaser';
 import { COLORS, HEIGHT, LEADERBOARD_NAME_KEY, WIDTH } from '../config';
 import { levelCount } from '../data/levels';
 import {
-  buildEffectsHud,
-  expiryBlinkAlpha,
-  remainingMs,
-} from '../logic/powerUpCountdown';
+  buildEffectHudRenderState,
+  createEmptyEffectSnapshot,
+  diffEffectHudRenderState,
+  hasLiveHudEffect,
+  isEffectSnapshot,
+  type EffectHudRenderLine,
+  type EffectSnapshot,
+} from '../logic/effectHudRenderState';
 import {
   LEADERBOARD_NAME_MAX,
   LEADERBOARD_TOP_N,
   sanitizeName,
   type RankedEntry,
 } from '../logic/leaderboardRules';
-import { updateHighScore } from '../systems/ProgressSave';
 import {
   fetchLeaderboard,
   submitScore,
@@ -38,6 +41,8 @@ export class UIScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   /** Left-rail timed power indicators (one text line each). */
   private effectLineTexts: Phaser.GameObjects.Text[] = [];
+  private effectRenderState: EffectHudRenderLine[] = [];
+  private effectSnapshot: EffectSnapshot = createEmptyEffectSnapshot();
   private overlay?: Phaser.GameObjects.Container;
   private confetti?: Phaser.GameObjects.Particles.ParticleEmitter;
   private victoryPhase: VictoryPhase = 'name';
@@ -48,6 +53,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
+    // A stopped Phaser scene can be started again with the same class instance.
+    this.effectLineTexts = [];
+    this.effectRenderState = [];
+    this.effectSnapshot = createEmptyEffectSnapshot();
+
     // Separate camera — HUD never shakes with GameScene
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
 
@@ -67,6 +77,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(10);
 
+    this.syncEffectSnapshot();
     this.refreshFromRegistry();
     this.refreshEffects();
 
@@ -111,18 +122,8 @@ export class UIScene extends Phaser.Scene {
     if (key === 'score') {
       this.maybeUpdateHighScore();
     }
-    if (
-      key === 'effectGlue' ||
-      key === 'effectBullet' ||
-      key === 'effectLaser' ||
-      key === 'effectSlow' ||
-      key === 'effectExplode' ||
-      key === 'effectGlueExpires' ||
-      key === 'effectBulletExpires' ||
-      key === 'effectLaserExpires' ||
-      key === 'effectSlowExpires' ||
-      key === 'effectExplodeExpires'
-    ) {
+    if (key === 'effectSnapshot') {
+      this.syncEffectSnapshot(value);
       this.refreshEffects(this.time.now);
     }
     if (key === 'uiOverlay') {
@@ -131,15 +132,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   update(time: number): void {
-    // Live countdown + blink while any timed power is active
-    const glue = Boolean(this.registry.get('effectGlue'));
-    const bullet = Boolean(this.registry.get('effectBullet'));
-    const laser = Boolean(this.registry.get('effectLaser'));
-    const slow = Boolean(this.registry.get('effectSlow'));
-    const explode = Boolean(this.registry.get('effectExplode'));
-    if (glue || bullet || laser || slow || explode) {
-      this.refreshEffects(time);
-    } else if (this.effectLineTexts.some((t) => t.visible)) {
+    // Derive each frame for the countdown/blink, but mutate Text only on a diff.
+    if (
+      hasLiveHudEffect(this.effectSnapshot, time) ||
+      this.effectRenderState.length > 0
+    ) {
       this.refreshEffects(time);
     }
   }
@@ -148,33 +145,19 @@ export class UIScene extends Phaser.Scene {
     const score = (this.registry.get('score') as number) ?? 0;
     const lives = (this.registry.get('lives') as number) ?? 0;
     const level = ((this.registry.get('level') as number) ?? 0) + 1;
-    this.scoreText.setText(`Score: ${score}`);
-    this.livesText.setText(`Lives: ${lives}`);
-    this.levelText.setText(`Level: ${level}`);
-  }
-
-  private effectColor(label: string): string {
-    switch (label) {
-      case 'GLUE':
-        return '#26a69a';
-      case 'BULLET':
-        return '#ff7043';
-      case 'LASER':
-        return '#ff5252';
-      case 'SLOW':
-        return '#29b6f6';
-      case 'BLAST':
-        return '#ffc107';
-      default:
-        return '#ffd54f';
-    }
+    const nextScore = `Score: ${score}`;
+    const nextLives = `Lives: ${lives}`;
+    const nextLevel = `Level: ${level}`;
+    if (this.scoreText.text !== nextScore) this.scoreText.setText(nextScore);
+    if (this.livesText.text !== nextLives) this.livesText.setText(nextLives);
+    if (this.levelText.text !== nextLevel) this.levelText.setText(nextLevel);
   }
 
   private ensureEffectLine(index: number): Phaser.GameObjects.Text {
     let text = this.effectLineTexts[index];
     if (text) return text;
     text = this.add
-      .text(16, 40, '', {
+      .text(16, 40 + index * 18, '', {
         fontFamily: 'monospace',
         fontSize: '13px',
         fontStyle: 'bold',
@@ -187,67 +170,39 @@ export class UIScene extends Phaser.Scene {
     return text;
   }
 
+  private syncEffectSnapshot(value = this.registry.get('effectSnapshot')): void {
+    if (isEffectSnapshot(value)) {
+      this.effectSnapshot = value;
+      return;
+    }
+    this.effectSnapshot = createEmptyEffectSnapshot();
+  }
+
   private refreshEffects(nowMs = this.time.now): void {
-    const glue = Boolean(this.registry.get('effectGlue'));
-    const bullet = Boolean(this.registry.get('effectBullet'));
-    const laser = Boolean(this.registry.get('effectLaser'));
-    const slow = Boolean(this.registry.get('effectSlow'));
-    const explode = Boolean(this.registry.get('effectExplode'));
+    const nextState = buildEffectHudRenderState(
+      this.effectSnapshot,
+      nowMs,
+    );
+    const patches = diffEffectHudRenderState(
+      this.effectRenderState,
+      nextState,
+    );
 
-    const glueExp = (this.registry.get('effectGlueExpires') as number) ?? 0;
-    const bulletExp = (this.registry.get('effectBulletExpires') as number) ?? 0;
-    const laserExp = (this.registry.get('effectLaserExpires') as number) ?? 0;
-    const slowExp = (this.registry.get('effectSlowExpires') as number) ?? 0;
-    const explodeExp =
-      (this.registry.get('effectExplodeExpires') as number) ?? 0;
-
-    const hud = buildEffectsHud([
-      {
-        label: 'GLUE',
-        remainingMs: glue ? remainingMs(glueExp, nowMs) : 0,
-      },
-      {
-        label: 'BULLET',
-        remainingMs: bullet ? remainingMs(bulletExp, nowMs) : 0,
-      },
-      {
-        label: 'LASER',
-        remainingMs: laser ? remainingMs(laserExp, nowMs) : 0,
-      },
-      {
-        label: 'SLOW',
-        remainingMs: slow ? remainingMs(slowExp, nowMs) : 0,
-      },
-      {
-        label: 'BLAST',
-        remainingMs: explode ? remainingMs(explodeExp, nowMs) : 0,
-      },
-    ]);
-
-    // Left vertical stack under the score
-    const lineH = 18;
-    const startY = 40;
-    for (let i = 0; i < hud.entries.length; i++) {
-      const entry = hud.entries[i]!;
-      const text = this.ensureEffectLine(i);
-      text
-        .setText(entry.line)
-        .setPosition(16, startY + i * lineH)
-        .setColor(this.effectColor(entry.label))
-        .setAlpha(expiryBlinkAlpha(nowMs, entry.remainingMs))
-        .setVisible(true);
+    for (const patch of patches) {
+      const text = this.ensureEffectLine(patch.index);
+      if (patch.text !== undefined) text.setText(patch.text);
+      if (patch.color !== undefined) text.setColor(patch.color);
+      if (patch.alpha !== undefined) text.setAlpha(patch.alpha);
+      if (patch.visible !== undefined) text.setVisible(patch.visible);
     }
-    for (let i = hud.entries.length; i < this.effectLineTexts.length; i++) {
-      this.effectLineTexts[i]?.setVisible(false).setText('');
-    }
+    this.effectRenderState = nextState;
   }
 
   private maybeUpdateHighScore(): void {
     const score = (this.registry.get('score') as number) ?? 0;
     const high = (this.registry.get('highScore') as number) ?? 0;
     if (score > high) {
-      const p = updateHighScore(score);
-      this.registry.set('highScore', p.highScore);
+      this.registry.set('highScore', score);
     }
   }
 
